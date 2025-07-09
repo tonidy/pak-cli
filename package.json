@@ -1,7 +1,7 @@
 {
   "name": "@kdbx/pak-lib",
-  "version": "0.1.0",
-  "description": "PAK (Password Age Kit) - A simple, secure password manager in JavaScript using age encryption",
+  "version": "0.1.1",
+  "description": "PAK (Password Age Kit) - A simple, secure password manager in JavaScript using age encryption. TypeScript port of the shell script from https://github.com/tonidy/pa-cli",
   "main": "dist/index.js",
   "bin": {
     "pa": "dist/cli.js"
