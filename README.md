@@ -1,6 +1,6 @@
 # PAK (Password Age Kit) - JavaScript Password Manager
 
-A simple, secure password manager in JavaScript using [age encryption](https://age-encryption.org/). This is a JavaScript port of the popular `pa` shell script password manager, providing cross-platform compatibility and modern features.
+A simple, secure password manager in JavaScript using [age encryption](https://age-encryption.org/). This is a TypeScript port of the shell script from [https://github.com/tonidy/pa-cli](https://github.com/tonidy/pa-cli), providing cross-platform compatibility and modern features.
 
 ## Features
 
@@ -155,7 +155,7 @@ await pm.delete('mysite');
 ### Building from Source
 
 ```bash
-git clone https://github.com/your-username/pak-lib.git
+git clone https://github.com/tonidy/pak-lib.git
 cd pak-lib
 npm install
 npm run build
@@ -219,6 +219,7 @@ If you discover a security vulnerability, please email security@example.com inst
 
 ## Acknowledgments
 
+- Shell script source: [pa-cli](https://github.com/tonidy/pa-cli) by tonidy
 - Original [pa](https://github.com/biox/pa) shell script by biox
 - [age encryption](https://age-encryption.org/) by Filippo Valsorda
 - [typage](https://github.com/FiloSottile/typage) TypeScript implementation 
