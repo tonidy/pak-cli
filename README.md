@@ -215,7 +215,7 @@ MIT License - see LICENSE file for details.
 
 ## Security
 
-If you discover a security vulnerability, please email security@example.com instead of using the issue tracker.
+If you discover a security vulnerability, please email tonidy@users.noreply.github.com instead of using the issue tracker.
 
 ## Acknowledgments
 
