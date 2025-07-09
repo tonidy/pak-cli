@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PAK Browser Example - Password Manager</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .output {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+        }
+        .success {
+            color: #155724;
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+        }
+        .warning {
+            color: #856404;
+            background-color: #fff3cd;
+            border-color: #ffeaa7;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #e9ecef;
+            border: 1px solid #dee2e6;
+            border-bottom: none;
+            margin-right: 2px;
+        }
+        .tab.active {
+            background-color: white;
+            border-bottom: 1px solid white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 PAK Browser Example</h1>
+        <p><strong>PAK (Password Age Kit)</strong> - Shell-to-JavaScript conversion with age encryption</p>
+        
+        <div class="tabs">
+            <div class="tab active" onclick="showTab('converter')">Shell Converter</div>
+            <div class="tab" onclick="showTab('webauthn')">WebAuthn Demo</div>
+            <div class="tab" onclick="showTab('examples')">Examples</div>
+        </div>
+        
+        <!-- Shell Converter Tab -->
+        <div id="converter" class="tab-content active">
+            <h2>Shell Script to JavaScript Converter</h2>
+            
+            <div class="form-group">
+                <label for="shellScript">Enter Shell Script:</label>
+                <textarea id="shellScript" rows="10" placeholder="#!/bin/bash&#10;echo 'Hello, World!'&#10;pw_add() {&#10;    echo 'Adding password...'&#10;}">#!/bin/bash
+# Simple password functions
+pw_add() {
+    echo "Adding password for $1"
+    echo "$2" | age --encrypt -R recipients -o "$1.age"
+}
+
+pw_show() {
+    age --decrypt -i identity "$1.age"
+}
+
+pw_list() {
+    find . -name "*.age" | sed 's/\.age$//' | sort
+}</textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="target">Target Environment:</label>
+                <select id="target">
+                    <option value="browser">Browser</option>
+                    <option value="node">Node.js</option>
+                    <option value="universal">Universal</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="ageIntegration" checked> Enable Age Encryption
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="webauthnCheckbox"> Include WebAuthn Support
+                </label>
+            </div>
+            
+            <button onclick="convertScript()">Convert to JavaScript</button>
+            <button onclick="validateScript()">Validate Script</button>
+            <button onclick="getStats()">Get Statistics</button>
+            
+            <div id="output" class="output"></div>
+        </div>
+        
+        <!-- WebAuthn Demo Tab -->
+        <div id="webauthn" class="tab-content">
+            <h2>WebAuthn Password Manager Demo</h2>
+            <p>This demonstrates browser-based password management using WebAuthn for authentication.</p>
+            
+            <div class="form-group">
+                <label for="keyName">Key Name:</label>
+                <input type="text" id="keyName" value="PAK Demo Key" placeholder="Enter a name for your key">
+            </div>
+            
+            <button onclick="createWebAuthnKey()">Create WebAuthn Key</button>
+            <button onclick="testEncryption()" id="encryptBtn" disabled>Test Encryption</button>
+            <button onclick="testDecryption()" id="decryptBtn" disabled>Test Decryption</button>
+            
+            <div class="form-group">
+                <label for="testData">Test Data:</label>
+                <input type="text" id="testData" value="Hello, PAK!" placeholder="Enter text to encrypt">
+            </div>
+            
+            <div id="webauthnOutput" class="output"></div>
+        </div>
+        
+        <!-- Examples Tab -->
+        <div id="examples" class="tab-content">
+            <h2>Example Shell Scripts</h2>
+            
+            <h3>Simple Password Manager</h3>
+            <button onclick="loadExample('simple')">Load Simple Example</button>
+            
+            <h3>Advanced Password Manager</h3>
+            <button onclick="loadExample('advanced')">Load Advanced Example</button>
+            
+            <h3>Git Integration Example</h3>
+            <button onclick="loadExample('git')">Load Git Example</button>
+            
+            <div id="exampleOutput" class="output"></div>
+        </div>
+    </div>
+
+    <!-- Include age-encryption for browser -->
+    <script src="https://unpkg.com/age-encryption@latest/age.js"></script>
+    
+    <script>
+        // Global variables
+        let webauthnIdentity = null;
+        let encryptedData = null;
+        
+        // Tab switching
+        function showTab(tabName) {
+            // Hide all tab contents
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => content.classList.remove('active'));
+            
+            // Remove active class from all tabs
+            const tabs = document.querySelectorAll('.tab');
+            tabs.forEach(tab => tab.classList.remove('active'));
+            
+            // Show selected tab content
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active class to clicked tab
+            event.target.classList.add('active');
+        }
+        
+        // Mock PAK functions for demonstration
+        function convertToJavaScript(shellScript, options) {
+            // This would normally use the actual PAK library
+            // For demo purposes, we'll return a simple conversion
+            const jsCode = `
+// Converted from shell script using PAK
+const age = require('age-encryption');
+const fs = require('fs');
+
+${options.ageIntegration ? `
+// Age encryption setup
+let identity = null;
+let recipient = null;
+
+async function initializeAge() {
+    identity = await age.generateIdentity();
+    recipient = await age.identityToRecipient(identity);
+}
+` : ''}
+
+// Converted functions
+async function pw_add(name, password) {
+    console.log('Adding password for', name);
+    ${options.ageIntegration ? `
+    const encrypter = new age.Encrypter();
+    encrypter.addRecipient(recipient);
+    const encrypted = await encrypter.encrypt(password);
+    fs.writeFileSync(\`\${name}.age\`, encrypted);
+    ` : `
+    // Age integration disabled
+    console.log('Would encrypt:', password);
+    `}
+}
+
+async function pw_show(name) {
+    ${options.ageIntegration ? `
+    const encryptedData = fs.readFileSync(\`\${name}.age\`);
+    const decrypter = new age.Decrypter();
+    decrypter.addIdentity(identity);
+    return await decrypter.decrypt(encryptedData, 'text');
+    ` : `
+    // Age integration disabled
+    return 'Would decrypt password for ' + name;
+    `}
+}
+
+async function pw_list() {
+    // Implementation would list .age files
+    return ['example1', 'example2', 'example3'];
+}
+
+${options.webauthn ? `
+// WebAuthn integration
+async function createWebAuthnCredential(keyName) {
+    return await age.webauthn.createCredential({ keyName });
+}
+
+async function encryptWithWebAuthn(data) {
+    const encrypter = new age.Encrypter();
+    encrypter.addRecipient(new age.webauthn.WebAuthnRecipient());
+    const encrypted = await encrypter.encrypt(data);
+    return age.armor.encode(encrypted);
+}
+` : ''}
+
+${options.ageIntegration ? 'initializeAge();' : ''}
+`;
+            
+            return {
+                code: jsCode,
+                warnings: [
+                    { message: 'This is a demo conversion', severity: 'warning' }
+                ],
+                dependencies: options.ageIntegration ? ['age-encryption'] : []
+            };
+        }
+        
+        function validateShellScript(script) {
+            return {
+                isValid: script.trim().length > 0,
+                errors: script.trim().length === 0 ? ['Script is empty'] : [],
+                warnings: []
+            };
+        }
+        
+        function getConversionStats(script) {
+            const lines = script.split('\n').length;
+            const functions = (script.match(/\w+\s*\(\s*\)/g) || []).length;
+            const variables = (script.match(/\w+=/g) || []).length;
+            
+            return {
+                lines,
+                functions,
+                variables,
+                commands: lines - functions - variables,
+                estimatedComplexity: lines > 50 ? 'high' : lines > 20 ? 'medium' : 'low'
+            };
+        }
+        
+        // Converter functions
+        function convertScript() {
+            const script = document.getElementById('shellScript').value;
+            const target = document.getElementById('target').value;
+            const ageIntegration = document.getElementById('ageIntegration').checked;
+            const webauthn = document.getElementById('webauthn').checked;
+            
+            const result = convertToJavaScript(script, {
+                target,
+                ageIntegration,
+                webauthn
+            });
+            
+            displayOutput('output', result.code, 'success');
+            
+            if (result.warnings.length > 0) {
+                const warnings = result.warnings.map(w => `${w.severity}: ${w.message}`).join('\n');
+                displayOutput('output', `\n\nWarnings:\n${warnings}`, 'warning');
+            }
+        }
+        
+        function validateScript() {
+            const script = document.getElementById('shellScript').value;
+            const result = validateShellScript(script);
+            
+            let output = `Validation Result:\n`;
+            output += `Valid: ${result.isValid}\n`;
+            
+            if (result.errors.length > 0) {
+                output += `Errors:\n${result.errors.join('\n')}\n`;
+            }
+            
+            if (result.warnings.length > 0) {
+                output += `Warnings:\n${result.warnings.join('\n')}\n`;
+            }
+            
+            displayOutput('output', output, result.isValid ? 'success' : 'error');
+        }
+        
+        function getStats() {
+            const script = document.getElementById('shellScript').value;
+            const stats = getConversionStats(script);
+            
+            const output = `Conversion Statistics:
+Lines: ${stats.lines}
+Functions: ${stats.functions}
+Variables: ${stats.variables}
+Commands: ${stats.commands}
+Estimated Complexity: ${stats.estimatedComplexity}`;
+            
+            displayOutput('output', output, 'success');
+        }
+        
+        // WebAuthn functions
+        async function createWebAuthnKey() {
+            try {
+                const keyName = document.getElementById('keyName').value;
+                webauthnIdentity = await age.webauthn.createCredential({ keyName });
+                
+                displayOutput('webauthnOutput', `WebAuthn key created successfully!\nIdentity: ${webauthnIdentity}`, 'success');
+                
+                document.getElementById('encryptBtn').disabled = false;
+                document.getElementById('decryptBtn').disabled = false;
+            } catch (error) {
+                displayOutput('webauthnOutput', `Error creating WebAuthn key: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testEncryption() {
+            try {
+                const testData = document.getElementById('testData').value;
+                
+                const encrypter = new age.Encrypter();
+                encrypter.addRecipient(new age.webauthn.WebAuthnRecipient());
+                const encrypted = await encrypter.encrypt(testData);
+                encryptedData = age.armor.encode(encrypted);
+                
+                displayOutput('webauthnOutput', `Data encrypted successfully!\nEncrypted (armored):\n${encryptedData}`, 'success');
+            } catch (error) {
+                displayOutput('webauthnOutput', `Error encrypting data: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testDecryption() {
+            try {
+                if (!encryptedData) {
+                    displayOutput('webauthnOutput', 'No encrypted data available. Please encrypt some data first.', 'warning');
+                    return;
+                }
+                
+                const decrypter = new age.Decrypter();
+                decrypter.addIdentity(new age.webauthn.WebAuthnIdentity());
+                const decoded = age.armor.decode(encryptedData);
+                const decrypted = await decrypter.decrypt(decoded, 'text');
+                
+                displayOutput('webauthnOutput', `Data decrypted successfully!\nDecrypted: ${decrypted}`, 'success');
+            } catch (error) {
+                displayOutput('webauthnOutput', `Error decrypting data: ${error.message}`, 'error');
+            }
+        }
+        
+        // Example functions
+        function loadExample(type) {
+            const examples = {
+                simple: `#!/bin/bash
+# Simple password manager
+pw_add() {
+    echo "Adding password for $1"
+    echo "$2" | age --encrypt -R recipients -o "$1.age"
+}
+
+pw_show() {
+    age --decrypt -i identity "$1.age"
+}
+
+pw_list() {
+    find . -name "*.age" | sed 's/\.age$//' | sort
+}`,
+                advanced: `#!/bin/bash
+# Advanced password manager with categories
+PA_DIR="\${PA_DIR:-~/.passwords}"
+PA_LENGTH="\${PA_LENGTH:-32}"
+
+pw_add() {
+    if [ -z "$2" ]; then
+        pass=\$(openssl rand -base64 \$PA_LENGTH)
+    else
+        pass="$2"
+    fi
+    
+    mkdir -p "\$(dirname "\$PA_DIR/$1")"
+    echo "\$pass" | age --encrypt -R recipients -o "\$PA_DIR/$1.age"
+    echo "Password added for $1"
+}
+
+pw_show() {
+    if [ ! -f "\$PA_DIR/$1.age" ]; then
+        echo "Password not found: $1"
+        return 1
+    fi
+    age --decrypt -i identity "\$PA_DIR/$1.age"
+}
+
+pw_generate() {
+    length=\${2:-\$PA_LENGTH}
+    openssl rand -base64 \$length | tr -d '\\n'
+}`,
+                git: `#!/bin/bash
+# Password manager with git integration
+PA_DIR="\${PA_DIR:-~/.passwords}"
+
+pw_add() {
+    echo "$2" | age --encrypt -R recipients -o "\$PA_DIR/$1.age"
+    
+    cd "\$PA_DIR"
+    git add "$1.age"
+    git commit -m "Add password for $1"
+    echo "Password added and committed to git"
+}
+
+pw_del() {
+    if [ -f "\$PA_DIR/$1.age" ]; then
+        rm "\$PA_DIR/$1.age"
+        cd "\$PA_DIR"
+        git add "$1.age"
+        git commit -m "Delete password for $1"
+        echo "Password deleted and committed to git"
+    fi
+}
+
+pw_sync() {
+    cd "\$PA_DIR"
+    git pull origin main
+    git push origin main
+    echo "Password store synchronized"
+}`
+            };
+            
+            if (examples[type]) {
+                document.getElementById('shellScript').value = examples[type];
+                showTab('converter');
+                displayOutput('exampleOutput', `Loaded ${type} example. Switch to Shell Converter tab to convert it.`, 'success');
+            }
+        }
+        
+        // Utility function to display output
+        function displayOutput(elementId, text, type = 'success') {
+            const element = document.getElementById(elementId);
+            element.textContent = text;
+            element.className = `output ${type}`;
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            displayOutput('output', 'Enter a shell script and click "Convert to JavaScript" to get started!');
+            displayOutput('webauthnOutput', 'Click "Create WebAuthn Key" to start the WebAuthn demo.');
+            displayOutput('exampleOutput', 'Click any example button to load a sample shell script.');
+        });
+    </script>
+</body>
+</html> 

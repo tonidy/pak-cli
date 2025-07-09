@@ -1,0 +1,73 @@
+{
+  "name": "@kdbx/pak-lib",
+  "version": "0.1.0",
+  "description": "PAK (Password Age Kit) - A simple, secure password manager in JavaScript using age encryption",
+  "main": "dist/index.js",
+  "bin": {
+    "pa": "dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "dev": "ts-node src/cli.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src/**/*.{js,ts}",
+    "lint:fix": "eslint src/**/*.{js,ts} --fix",
+    "typecheck": "tsc --noEmit",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "password",
+    "manager",
+    "age",
+    "encryption",
+    "security",
+    "crypto",
+    "cli",
+    "cross-platform",
+    "keychain",
+    "credential-store"
+  ],
+  "author": "tonidy",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tonidy/pak-lib.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tonidy/pak-lib/issues"
+  },
+  "homepage": "https://github.com/tonidy/pak-lib#readme",
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^18.15.0",
+    "@typescript-eslint/eslint-plugin": "^5.57.0",
+    "@typescript-eslint/parser": "^5.57.0",
+    "eslint": "^8.37.0",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "age-encryption": "^0.2.4",
+    "commander": "^9.4.0",
+    "keytar": "^7.9.0",
+    "readline": "^1.3.0"
+  },
+  "optionalDependencies": {
+    "fzf": "^0.5.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+} 
