@@ -5,15 +5,34 @@
 import * as age from 'age-encryption';
 import * as fs from 'fs';
 import * as path from 'path';
-import { PakConfig } from '../types';
+import { PakConfig, SecureEnclaveConfig } from '../types';
+import { SecureEnclaveManager } from './secure-enclave-manager';
 
 export class AgeManager {
   private identities: string[] = [];
   private recipients: string[] = [];
   private config: PakConfig;
+  private secureEnclave?: SecureEnclaveManager;
 
+  /**
+   * Initialize AgeManager with updated SE configuration
+   */
   constructor(config: PakConfig) {
     this.config = config;
+    
+    // Initialize Apple Secure Enclave if available and enabled
+    if (process.platform === 'darwin' && !config.useAgeBinary) {
+      const seConfig: SecureEnclaveConfig = {
+        accessControl: config.seAccessControl || 'any-biometry-or-passcode',
+        recipientType: 'piv-p256',
+        useNative: false,
+        // Use Pure JS backend since native SE is not implemented yet
+        backend: 'pure-js',
+        preferNative: false,
+        fallbackToCli: true
+      };
+      this.secureEnclave = new SecureEnclaveManager(seConfig);
+    }
   }
 
   /**
@@ -65,13 +84,38 @@ export class AgeManager {
   }
 
   /**
-   * Encrypt data using age encryption
+   * Encrypt data using age encryption with native SE support
    */
   async encrypt(data: string, recipients?: string[]): Promise<Uint8Array> {
     const recipientsToUse = recipients || this.recipients;
     
     if (!recipientsToUse || recipientsToUse.length === 0) {
       throw new Error('No recipients specified for encryption');
+    }
+    
+    // Check if we have SE recipients and can use native SE
+    const hasSeRecipients = recipientsToUse.some(r => r.startsWith('age1se1'));
+    const hasOtherPluginRecipients = recipientsToUse.some(r => 
+      r.startsWith('age1yubikey1') || r.startsWith('age1p256tag1')
+    );
+    
+    // Use native SE encryption if available and we have SE recipients
+    if (this.secureEnclave && hasSeRecipients && !hasOtherPluginRecipients && !this.config.useAgeBinary) {
+      try {
+        // For SE-only encryption, use native SE implementation
+        const seRecipients = recipientsToUse.filter(r => r.startsWith('age1se1'));
+        const standardRecipients = recipientsToUse.filter(r => !r.startsWith('age1se1'));
+        
+        if (seRecipients.length > 0 && standardRecipients.length === 0) {
+          // Pure SE encryption - use native SE
+          const dataBuffer = new TextEncoder().encode(data);
+          const encrypted = await this.secureEnclave.encrypt(dataBuffer, seRecipients[0]);
+          return encrypted;
+        }
+      } catch (error) {
+        // Fall back to CLI on error
+        console.warn('SE native encryption failed, falling back to CLI:', error);
+      }
     }
     
     // Check if binary usage is forced or needed for plugins
@@ -104,7 +148,7 @@ export class AgeManager {
   }
 
   /**
-   * Decrypt data using age decryption
+   * Decrypt data using age decryption with native SE support
    */
   async decrypt(ciphertext: Uint8Array, identities?: string[]): Promise<string> {
     const identitiesToUse = identities || this.identities;
@@ -113,12 +157,36 @@ export class AgeManager {
       throw new Error('No identities specified for decryption');
     }
     
+    // Check if we have SE identities and can use native SE
+    const hasSeIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-SE-'));
+    const hasOtherPluginIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-YUBIKEY-'));
+    
+    // Use native SE decryption if available and we have SE identities
+    if (this.secureEnclave && hasSeIdentities && !hasOtherPluginIdentities && !this.config.useAgeBinary) {
+      try {
+        // For SE-only decryption, use native SE implementation
+        const seIdentities = identitiesToUse.filter(i => i.includes('AGE-PLUGIN-SE-'));
+        const standardIdentities = identitiesToUse.filter(i => !i.includes('AGE-PLUGIN-SE-'));
+        
+        if (seIdentities.length > 0 && standardIdentities.length === 0) {
+          // Pure SE decryption - use native SE
+          // First, try to get the private key reference from the identity
+          const keyPair = await this.secureEnclave.loadKeyPair(seIdentities[0]);
+          const decrypted = await this.secureEnclave.decrypt(ciphertext, keyPair.privateKeyRef);
+          return new TextDecoder().decode(decrypted);
+        }
+      } catch (error) {
+        // Fall back to CLI on error
+        console.warn('SE native decryption failed, falling back to CLI:', error);
+      }
+    }
+    
     // Check if binary usage is forced or needed for plugins
     const hasPluginIdentities = identitiesToUse.some(i => 
       i.includes('AGE-PLUGIN-SE-') || i.includes('AGE-PLUGIN-YUBIKEY-')
     );
     
-    // Also check if the ciphertext contains plugin-specific headers
+    // Check if the ciphertext contains plugin-specific headers (for backwards compatibility)
     const ciphertextString = new TextDecoder().decode(ciphertext.slice(0, 200));
     const hasPluginCiphertext = ciphertextString.includes('piv-p256') || ciphertextString.includes('yubikey');
     
@@ -388,6 +456,11 @@ export class AgeManager {
    * Check if age-plugin-se is available
    */
   async isSecureEnclaveAvailable(): Promise<boolean> {
+    // Use native SE if available, fallback to CLI check
+    if (this.secureEnclave) {
+      return await this.secureEnclave.isAvailable();
+    }
+    
     try {
       const { execSync } = await import('child_process');
       execSync('command -v age-plugin-se', { stdio: 'ignore' });
@@ -404,6 +477,23 @@ export class AgeManager {
     accessControl: string = 'any-biometry-or-passcode',
     outputFile?: string
   ): Promise<string> {
+    // Use native SE if available, fallback to CLI
+    if (this.secureEnclave) {
+      try {
+        const keyPair = await this.secureEnclave.generateKeyPair(accessControl);
+        
+        if (outputFile) {
+          const content = `# created: ${keyPair.createdAt.toISOString()}\n# access control: ${accessControl}\n# public key: ${keyPair.recipient}\n${keyPair.identity}\n`;
+          fs.writeFileSync(outputFile, content);
+          return `Public key: ${keyPair.recipient}`;
+        } else {
+          return keyPair.identity;
+        }
+      } catch (error) {
+        console.warn('Native SE key generation failed, falling back to CLI:', error);
+      }
+    }
+    
     const { execSync } = await import('child_process');
     
     try {
@@ -427,6 +517,22 @@ export class AgeManager {
    * Get recipients from a Secure Enclave identity file
    */
   async getSecureEnclaveRecipients(identityFile: string): Promise<string[]> {
+    // Use native SE if available, fallback to CLI
+    if (this.secureEnclave) {
+      try {
+        const content = fs.readFileSync(identityFile, 'utf8');
+        const lines = content.split('\n').filter(line => line.trim() && !line.startsWith('#'));
+        
+        if (lines.length > 0) {
+          const identity = lines[0];
+          const recipient = await this.secureEnclave.identityToRecipient(identity);
+          return [recipient];
+        }
+      } catch (error) {
+        console.warn('Native SE recipient extraction failed, falling back to CLI:', error);
+      }
+    }
+    
     const { execSync } = await import('child_process');
     
     try {

@@ -1,1 +1,5 @@
-{"useAgeBinary": true}
+{
+  "useAgeBinary": false,
+  "seAccessControl": "any-biometry-or-passcode",
+  "seAutoConfirm": false
+}

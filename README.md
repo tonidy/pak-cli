@@ -90,6 +90,9 @@ pa se-info
 - **Non-extractable keys**: Private keys cannot be copied or moved
 - **Access control options**: Multiple authentication methods available
 - **Recipient conversion**: Compatible with age-plugin-yubikey format
+- **Native integration**: TypeScript/JavaScript API for direct SE operations (new!)
+- **Performance optimized**: Native SE operations avoid CLI overhead
+- **Automatic fallback**: Graceful fallback to CLI when native operations fail
 
 #### Access Control Options
 
@@ -131,6 +134,38 @@ echo "secret" | age -r age1yubikey1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh8
 - macOS 13.0 (Ventura) or later
 - Mac with Apple Silicon or Intel T2 Security Chip
 - age-plugin-se installed
+
+#### Programmatic API
+
+Use the SE integration programmatically:
+
+```javascript
+const { AgeManager, AppleSecureEnclave } = require('pak-lib');
+
+// Initialize with SE support
+const config = {
+  useAgeBinary: false,  // Use native SE integration
+  seAccessControl: 'any-biometry-or-passcode'
+};
+
+const ageManager = new AgeManager(config);
+
+// Check SE availability
+const isAvailable = await ageManager.isSecureEnclaveAvailable();
+
+// Generate SE identity
+const identity = await ageManager.generateSecureEnclaveIdentity('any-biometry');
+
+// Use direct SE module
+const secureEnclave = new AppleSecureEnclave({
+  accessControl: 'any-biometry-or-passcode',
+  recipientType: 'piv-p256',
+  useNative: true
+});
+
+const keyPair = await secureEnclave.generateKeyPair('any-biometry');
+const capabilities = await secureEnclave.getCapabilities();
+```
 
 ### Configuration
 

@@ -6,6 +6,10 @@
 // Main password manager class
 export { PasswordManager } from './password-manager';
 
+// Crypto and encryption
+export { AgeManager } from './crypto/age-manager';
+export { AppleSecureEnclave, SecureEnclaveManager } from './crypto/secure-enclave-manager';
+
 // Platform utilities
 export { PlatformDetector } from './platform/platform-detector';
 
@@ -28,7 +32,12 @@ export {
   RandomGenerator,
   UserInteraction,
   FileSystem,
-  PaError
+  PaError,
+  // Apple Secure Enclave types
+  SecureEnclaveConfig,
+  SecureEnclaveKeyPair,
+  SecureEnclaveCapabilities,
+  AppleSecureEnclaveAPI
 } from './types';
 
 // Version constant

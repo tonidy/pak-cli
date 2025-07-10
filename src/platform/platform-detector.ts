@@ -80,6 +80,76 @@ export class PlatformDetector {
   }
 
   /**
+   * Check if Apple Secure Enclave is available on this device
+   */
+  async isSecureEnclaveAvailable(): Promise<boolean> {
+    if (!this.supportsFeature('secure-enclave')) {
+      return false;
+    }
+
+    try {
+      const { spawn } = await import('child_process');
+      
+      // Check for age-plugin-se availability
+      return new Promise((resolve) => {
+        const proc = spawn('which', ['age-plugin-se'], { stdio: 'pipe' });
+        
+        proc.on('close', (code) => {
+          resolve(code === 0);
+        });
+        
+        proc.on('error', () => {
+          resolve(false);
+        });
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get macOS version information
+   */
+  async getMacOSVersion(): Promise<{ version: string; supported: boolean }> {
+    if (!this.supportsFeature('secure-enclave')) {
+      return { version: 'unknown', supported: false };
+    }
+
+    try {
+      const { spawn } = await import('child_process');
+      
+      return new Promise((resolve) => {
+        const proc = spawn('sw_vers', ['-productVersion'], { stdio: 'pipe' });
+        
+        let output = '';
+        proc.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+        
+        proc.on('close', (code) => {
+          if (code === 0) {
+            const version = output.trim();
+            const versionParts = version.split('.').map(Number);
+            
+            // Secure Enclave requires macOS 13.0 (Ventura) or later
+            const supported = versionParts[0] >= 13;
+            
+            resolve({ version, supported });
+          } else {
+            resolve({ version: 'unknown', supported: false });
+          }
+        });
+        
+        proc.on('error', () => {
+          resolve({ version: 'unknown', supported: false });
+        });
+      });
+    } catch {
+      return { version: 'unknown', supported: false };
+    }
+  }
+
+  /**
    * Get the appropriate temporary directory for the current platform
    */
   getTempDirectory(): string {

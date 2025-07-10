@@ -1,0 +1,5041 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+The content has been processed where security check has been disabled.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Security check has been disabled - content may contain sensitive information
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.github/
+  actions/
+    setup/
+      action.yml
+  workflows/
+    build-main.yml
+    build.yml
+    release.yml
+Documentation/
+  age-plugin-se.1.scd
+  Design.md
+Scripts/
+  alpine/
+    .gitignore
+    APKBUILD
+    chroot-build.sh
+    dir2apk.go
+    Makefile
+    r@mko.re-66596f64.rsa.pub
+    README.md
+  ConvertBech32HRP.swift
+  ProcessCoverage.swift
+Sources/
+  Base64.swift
+  Bech32.swift
+  CLI.swift
+  Crypto.swift
+  Plugin.swift
+  Stream.swift
+Tests/
+  Base64Tests.swift
+  Bech32Tests.swift
+  CLITests.swift
+  CryptoTests.swift
+  DummyCrypto.swift
+  MemoryStream.swift
+  PluginTests.swift
+  StanzaTests.swift
+.gitignore
+LICENSE.txt
+Makefile
+Package.resolved
+Package.swift
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".github/actions/setup/action.yml">
+name: "Setup project"
+runs:
+  using: "composite"
+  steps:
+
+  ################################################################################
+  # Base dependencies
+  ################################################################################
+
+  - if: runner.os == 'macOS'
+    run: brew install age swift-format scdoc
+    shell: bash
+  - if: runner.os == 'Linux'
+    run: |
+      sudo apt-get update
+      sudo apt-get install -y scdoc
+      # Age on current Ubuntu doesn't support plugins
+      # sudo apt-get install age
+      case "${{ runner.arch }}" in
+        X64) arch=amd64 ;;
+        ARM64) arch=arm64 ;;
+        *) echo "unknown architecture: ${{ runner.arch }}"; exit -1 ;;
+      esac
+      curl -L -s https://github.com/FiloSottile/age/releases/download/v1.1.1/age-v1.1.1-linux-$arch.tar.gz  | tar xvz
+      echo "$GITHUB_WORKSPACE/age" >> $GITHUB_PATH
+    shell: bash
+  - if: runner.os == 'Windows'
+    run: choco install age.portable
+    shell: pwsh
+
+
+  ################################################################################
+  # Swift
+  ################################################################################
+
+  # - if: runner.os == 'macOS'
+  #   run: |
+  #     curl -L -s -o swift.pkg https://download.swift.org/swift-5.9.2-release/xcode/swift-5.9.2-RELEASE/swift-5.9.2-RELEASE-osx.pkg
+  #     # sudo installer -pkg swift.pkg -verbose -dumplog -target /
+  #     tar xvf swift.pkg 
+  #     tar xvf swift-5.9.2-RELEASE-osx-package.pkg/Payload
+  #     echo "$GITHUB_WORKSPACE/usr/bin" >> $GITHUB_PATH
+  #   shell: bash
+
+  # Install a 6.0 toolchain and SDK so we can package a static Linux binary
+  # Used by setting TOOLCHAINS=swift in the environment
+  # Once the macOS runner has a Swift 6 compiler, we can remove the toolchain download.
+  - if: runner.os == 'macOS'
+    run: |
+      curl -L -s -o swift.pkg https://download.swift.org/swift-6.0-branch/xcode/swift-6.0-DEVELOPMENT-SNAPSHOT-2024-09-17-a/swift-6.0-DEVELOPMENT-SNAPSHOT-2024-09-17-a-osx.pkg
+      sudo installer -pkg swift.pkg -verbose -dumplog -target /
+      env TOOLCHAINS=swift swift sdk install https://download.swift.org/swift-6.0-branch/static-sdk/swift-6.0-DEVELOPMENT-SNAPSHOT-2024-09-17-a/swift-6.0-DEVELOPMENT-SNAPSHOT-2024-09-17-a_static-linux-0.0.1.artifactbundle.tar.gz --checksum 83a88650cd0675552ce2cf8159c31966fde73418f49493c1644073fffe8be9f4
+
+    shell: bash
+  
+  - if: runner.os == 'Linux'
+    run: |
+      case "${{ runner.arch }}" in
+        X64) arch= ;;
+        ARM64) arch=-aarch64 ;;
+        *) echo "unknown architecture: ${{ runner.arch }}"; exit -1 ;;
+      esac
+      curl -L -s https://download.swift.org/swift-5.9.2-release/ubuntu2204$arch/swift-5.9.2-RELEASE/swift-5.9.2-RELEASE-ubuntu22.04$arch.tar.gz | tar xvz 
+      echo "$GITHUB_WORKSPACE/swift-5.9.2-RELEASE-ubuntu22.04$arch/usr/bin" >> $GITHUB_PATH
+    shell: bash
+
+  - if: runner.os == 'Windows'
+    uses: compnerd/gha-setup-swift@main
+    with:
+      branch: swift-5.9.2-release
+      tag: 5.9.2-RELEASE
+</file>
+
+<file path=".github/workflows/build-main.yml">
+name: Build (main)
+
+on:
+  push:
+    branches: [main]
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    secrets:
+      ALPINE_KEY: ${{ secrets.ALPINE_KEY }}
+
+
+  deploy-pages:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: macos-13
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+</file>
+
+<file path=".github/workflows/build.yml">
+name: Build
+
+on:
+  push:
+    branches: ['*', '!main']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      ALPINE_KEY:
+        required: true
+  schedule:
+    - cron: "0 6 * * 6"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-13, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: make
+      - run: make test COVERAGE=1
+      - run: make smoke-test-encrypt
+      - run: make lint
+        # We don't have swift-format on Linux yet
+        if: runner.os == 'macOS'
+
+      # Packaging
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.22.0'
+        if: runner.os == 'macOS'
+      - name: Package
+        run: make package
+        if: runner.os != 'Windows'
+      - name: Package (Alpine)
+        run: |
+          echo "$ALPINE_KEY" > Scripts/alpine/r@mko.re-66596f64.rsa
+          make package-linux
+        env:
+          TOOLCHAINS: swift
+          ALPINE_KEY: ${{ secrets.ALPINE_KEY }}
+        if: runner.os == 'macOS'
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{matrix.os}}
+          path: |
+            .build/age-plugin-se-*.tgz
+            .build/age-plugin-se-*.zip
+            .build/age-plugin-se-*.apk
+          include-hidden-files: true
+
+      # Build & upload site artifacts
+      # Deploy happens in the `build-main` workflow, which only runs on main
+      - name: Package site artifacts
+        run: |
+          mkdir -p .build/site/ci
+          cp .build/coverage.svg .build/coverage.html .build/site/ci
+        shell: bash
+      - name: Upload site artifacts
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .build/site
+        if: runner.os == 'macOS'
+
+  # Running swift from the Makefile doesn't work (yet), so we have a separate
+  # build procedure for windows.
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: swift build
+      # Unit tests don't seem to work yet
+      # - run: swift test
+      - name: Run smoke test
+        run: |
+          $Env:Path += ";" + (swift build --show-bin-path)
+          echo "test" | age --encrypt --recipient age1se1qgg72x2qfk9wg3wh0qg9u0v7l5dkq4jx69fv80p6wdus3ftg6flwg5dz2dp -o secret.txt.age
+      
+      # Packaging
+      - name: Package (Windows)
+        run: |
+          $VERSION = Select-String -Path "Sources/CLI.Swift" -Pattern "^let version" | % {$_ -replace '.*"v(.*)"', "`$1" }
+          swift build -c release --static-swift-stdlib
+          $BINPATH = swift build -c release --static-swift-stdlib --show-bin-path
+          $ARCH = $Env:PROCESSOR_ARCHITECTURE.ToLower()
+          7z a -tzip ".build\age-plugin-se-v${VERSION}-${ARCH}-windows.zip" "$BINPATH\age-plugin-se.exe"
+        if: runner.os == 'Windows'
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-windows-latest
+          path: .build/age-plugin-se-*.zip
+          include-hidden-files: true
+</file>
+
+<file path=".github/workflows/release.yml">
+name: Release
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  release:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - name: "Download artifacts"
+        uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          path: packages
+
+      - name: "Upload artifacts"
+        run: |
+          for f in `find packages -depth 2`; do
+            echo "Uploading: $f ($(file -b --mime-type $f))"
+            curl --fail-with-body --retry-all-errors --retry 5 \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: $(file -b --mime-type $f)" \
+              --data-binary @$f \
+              "$RELEASE_ASSETS_UPLOAD_URL?name=$(basename $f)"
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ASSETS_UPLOAD_URL: https://uploads.github.com/repos/${{ github.event.repository.full_name}}/releases/${{ github.event.release.id }}/assets
+        shell: bash
+</file>
+
+<file path="Documentation/age-plugin-se.1.scd">
+AGE-PLUGIN-SE(1) "age-plugin-se @VERSION@" ""
+
+# NAME
+
+age-plugin-se - age plugin for Apple Secure Enclave
+
+
+# SYNOPSIS
+
+*age-plugin-se* *keygen* \[*-o* _OUTPUT_\] \[*--access-control* _ACCESS_CONTROL_\]++
+*age-plugin-se* *recipients* \[*-o* _OUTPUT_\] \[*-i* _INPUT_\]
+
+
+# DESCRIPTION
+
+*age-plugin-se* is a plugin for age, enabling encryption protected by Apple's
+Secure Enclave. It is automatically picked up by age for encryption and decryption
+when the plugin is on the execution path.
+
+The *keygen* subcommand generates a new private key (identity) bound to the
+current Secure Enclave, with the given access controls, and outputs it to
+_OUTPUT_ or standard output.
+
+The *recipients* subcommand reads an identity file from _INPUT_ or standard
+input, and outputs the corresponding recipient(s) to _OUTPUT_ or to standard
+output.
+
+
+# OPTIONS
+
+*-i*, *--input* _INPUT_
+
+	Read data from the file at path _INPUT_
+
+*-o*, *--output* _OUTPUT_
+
+	Write the result to the file at path _OUTPUT_
+
+*--access-control* _ACCESS_CONTROL_
+
+	Access control for using the generated key.
+								
+	When using current biometry, adding or removing a fingerprint stops the key
+	from working. Removing an added fingerprint enables the key again. 
+
+	Supported values: *none*, *passcode*, *any-biometry*,
+	*any-biometry-and-passcode*, *any-biometry-or-passcode*,
+	*current-biometry*, *current-biometry-and-passcode*.  Default:
+	*any-biometry-or-passcode*.
+
+
+# EXAMPLES
+
+Generate a new key (identity) protected by biometry (e.g. Touch ID):
+
+```
+$ age-plugin-se keygen --access-control=any-biometry -o key.txt
+Public key: age1se1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak
+```
+
+Encrypt data using the generated public key:
+
+```
+$ tar cvz ~/data | age -r age1se1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak
+```
+
+Decrypt the encrypted file:
+
+```
+$ age --decrypt -i key.txt data.tar.gz.age > data.tar.gz
+```
+
+
+# AUTHOR
+
+Remko Tronçon <r@mko.re>
+
+
+# SEE ALSO
+
+age(1)
+
+## Project homepage
+
+https://github.com/remko/age-plugin-se
+</file>
+
+<file path="Documentation/Design.md">
+# Design Notes
+
+This document contains notes about design choices made in the plugin.
+
+## `piv-p256` recipient stanza
+
+This plugin uses the `piv-p256` recipient stanza in encrypted files.
+This is the same stanza used by the [age YubiKey
+plugin](https://github.com/str4d/age-plugin-yubikey).
+
+The `piv-p256` recipient stanza is [currently being
+standardized](https://github.com/C2SP/C2SP/pull/31).
+
+## SecureEnclave APIs: Security vs CryptoKit
+
+Apple provides 2 APIs for communicating with the Secure Enclave:
+[through the Security
+Framework](https://developer.apple.com/documentation/security/certificate_key_and_trust_services/keys/protecting_keys_with_the_secure_enclave),
+and [through
+CryptoKit](https://developer.apple.com/documentation/cryptokit/secureenclave).
+
+The advantage of the Security framework is that it has been around for a
+long time, and is accessible from within Objective-C, which means you
+could write the entire plugin in e.g. Go, and use cgo out of the box for
+the few functions that need to talk to the Secure Enclave. However,
+using this API comes with disadvantages:
+
+- The Security API requires your app to have special entitlements. This
+  means you need to have an Apple Developer Certificate to build and run
+  the app locally, and it could not be distributed through Homebrew
+  core.
+- Because the app needs entitlements, it cannot be distributed as a
+  single binary, but has to be wrapped in a macOS App structure. You can
+  still link from somewhere in the executable path to the binary inside
+  the app structure, but the app would need to live somewhere else
+  (possibly hidden, since the plugin is useless as a runnable standalone
+  UI application)
+- All keys are created through the Keychain. This means creating a key
+  has a side effect of putting something in your keychain. You could
+  probably export the private data from the keychain into an age
+  identity file, and delete the key immediately after creating it, but
+  something may go wrong, and you would be leaking data. Alternatively,
+  you could choose to leave the keys in the Keychain, but then the
+  plugin would need to manage looking up keys by tag, and push the
+  complexity of keeping multiple keys via a plugin-specific CLI to the
+  user. It's also not clear what happens during backup restore of the
+  keychain, as there have been reports of confusing behavior there.
+- Even for the few lines of Objective-C that are necessary, it would
+  require a good understanding of how memory management works in the
+  Objective-C API in order to not run memory corruption or leaks. I'm
+  not that confident I can get this 100% right. And even if I was, I
+  still vastly prefer using a memory-safe language, especially for
+  security-critical code.
+
+The CryptoKit framework does not have any of these disadvantages: it
+accesses the Secure Enclave directly, using a very simple API that does
+not require special entitlements. However, CryptoKit is only accessible
+through Swift, which means you can't directly write your plugin in a
+language such as Go and use cgo out of the box. You could probably still
+create a small library in Swift that does the necessary calls, and wrap
+that in an Objective-C or C API, and use Cgo on that, but that's a lot
+of moving parts and complexity for a simple plugin such as this one.
+Besides, the only potential part that could be reused in the plugin
+would be the Age stanza parsing, which not only just 50 lines of code,
+but isn't exposed by age anyway. CryptoKit comes with all the necessary
+cryptographic primitives that are necessary for the rest of the plugin.
+
+For these reasons, I have chosen to keep the plugin as simple as
+possible for both me and the user, so it is implemented entirely in
+Swift using the CryptoKit API.
+
+## CryptoKit & Swift Crypto
+
+[Swift Crypto](https://github.com/apple/swift-crypto) is an open source
+implementation of a subset of [Apple
+CryptoKit](https://developer.apple.com/documentation/cryptokit),
+suitable for building CryptoKit apps on Linux and Windows.
+
+When used on macOS, calls to Swift Crypto functions are replaced by
+calls to CryptoKit functions. This means you can technically just import
+Swift Crypto everywhere instead of CryptoKit (except for places where
+you still need CryptoKit-specific code, such as [the SecureEnclave
+APIs](https://github.com/apple/swift-crypto/issues/147)), without the
+need for conditional imports. However, I still prefer to avoid moving
+parts and dependencies as much as possible, so this plugin only
+conditionally imports Swift Crypto on platforms where CryptoKit is not
+available (i.e., non-macOS), and uses CryptoKit directly otherwise.
+</file>
+
+<file path="Scripts/alpine/.gitignore">
+src/
+packages/
+/*.rsa
+</file>
+
+<file path="Scripts/alpine/APKBUILD">
+# Contributor: Remko Tronçon <r@mko.re>
+# Maintainer: Remko Tronçon <r@mko.re>
+pkgname=age-plugin-se
+pkgver=0.1.3
+pkgrel=0
+pkgdesc="age plugin for Apple's Secure Enclave"
+url="https://github.com/remko/age-plugin-se"
+arch="aarch64 x86_64"
+license="MIT"
+depends=""
+depends_doc=""
+makedepends="make debootstrap scdoc"
+checkdepends=""
+options="!check !tracedeps" # !check because the binary only works if the dynamic linker is at the correct absolute path
+install=""
+subpackages="$pkgname-doc"
+source="
+ 	${pkgname}-${pkgver}.tar.gz::https://github.com/remko/age-plugin-se/archive/refs/tags/v${pkgver}.tar.gz 
+ 	chroot-build.sh"
+builddir="$srcdir/age-plugin-se-${pkgver}"
+
+repo="main"
+
+build() {
+	cd $builddir
+	doas env PREFIX=/usr $srcdir/chroot-build.sh || return 1
+	doas chown -R $USER.$USER $builddir/.build || return 1
+	make .build/age-plugin-se.1 || return 1
+}
+
+check() {
+	:
+}
+
+package() {
+	install -d "$pkgdir"
+	cp -r $builddir/.build/chroot-build/* "$pkgdir" || return 1
+	make PREFIX=/usr DESTDIR="$pkgdir" install-doc || return 1
+}
+
+sha512sums="
+06c28a5b5ab0d876bd67465adc6192c3a8b5920e136b9c67cab6733bb2ea565385ad8eaf852418c0c1d27e55ce39cd2e3b471a9f62bec0a18b4fc1b7d860bfe7  age-plugin-se-0.1.3.tar.gz
+859a881dd7dca757155dfa62362bf0977bea2a0e4eefb2faeebce8f5ff72c2450e55a90246c80552b14b04639358de75e088985b40b3c5218751bb00df74e7a1  chroot-build.sh
+"
+</file>
+
+<file path="Scripts/alpine/chroot-build.sh">
+#!/bin/sh
+
+################################################################################
+# Builds age-plugin-se in a Debian chroot, and copies the binary
+# and all its dynamically loaded libraries into the destination dir.
+#
+# Has to be run as root
+################################################################################
+
+set -e
+
+NAME=age-plugin-se
+BIN_NAME=$NAME
+
+# Sources directories necessary for the build. 
+# These will be copied to the chroot.
+SOURCES="Sources Tests Package.swift"
+
+# List of dynamic libraries the resulting binary depends upon
+# These will be bundled, together with the dynamic linker
+LIBS="libm.so.6 libstdc++.so.6 libgcc_s.so.1 libc.so.6"
+
+if [ -z "$PREFIX" ]; then
+  PREFIX=/usr/local
+fi
+if [ -z "$DESTDIR" ]; then
+  DESTDIR=.build/chroot-build
+fi
+
+ARCH=$(uname -m)
+CHROOT_DIR=/mnt/$NAME-build-chroot
+CHROOT_BUILD_DIR=/opt/build
+
+
+if [ "$ARCH" == "aarch64" ]; then
+  SWIFT_PACKAGE_SUFFIX=-aarch64
+  LINKER=ld-linux-aarch64.so.1
+else
+  SWIFT_PACKAGE_SUFFIX=
+  LINKER=ld-linux-x86-64.so.2
+fi
+
+SWIFT_PACKAGE_URL=https://download.swift.org/swift-5.10.1-release/debian12$SWIFT_PACKAGE_SUFFIX/swift-5.10.1-RELEASE/swift-5.10.1-RELEASE-debian12$SWIFT_PACKAGE_SUFFIX.tar.gz
+SWIFT_DIR=/usr/local/swift-5.10.1-RELEASE-debian12$SWIFT_PACKAGE_SUFFIX
+SWIFT=$SWIFT_DIR/usr/bin/swift
+
+################################################################################
+# Create Debian chroot
+################################################################################
+
+if [ ! -d "$CHROOT_DIR" ]; then
+  mkdir -p $CHROOT_DIR
+  /usr/sbin/debootstrap --variant=minbase stable $CHROOT_DIR https://deb.debian.org/debian/
+fi
+
+
+################################################################################
+# Install swift (+dependencies) in the chroot
+################################################################################
+
+if [ ! -d "$CHROOT_DIR$SWIFT_DIR" ]; then
+  wget -q -O - $SWIFT_PACKAGE_URL | tar -C $CHROOT_DIR/usr/local -x -v -z 
+fi
+echo -e "$SWIFT_DIR/usr/lib/swift/linux\\n$SWIFT_DIR/usr/lib/swift/host" > $CHROOT_DIR/etc/ld.so.conf.d/swift.conf
+/usr/sbin/chroot $CHROOT_DIR sh -c 'apt-get update && apt-get -y install sqlite3 libncurses6 libcurl4 libxml2 binutils libc6-dev libgcc-12-dev git libstdc++-12-dev'
+
+
+################################################################################
+# Add sources to the chroot
+################################################################################
+
+mkdir -p $CHROOT_DIR$CHROOT_BUILD_DIR
+rsync --delete -a $SOURCES $CHROOT_DIR$CHROOT_BUILD_DIR
+
+
+################################################################################
+# Build in the chroot
+################################################################################
+
+/usr/sbin/chroot $CHROOT_DIR sh -c "mount -t proc /proc proc/"
+
+set +e
+/usr/sbin/chroot $CHROOT_DIR sh -c "set -e; cd $CHROOT_BUILD_DIR && $SWIFT build -c release --static-swift-stdlib -Xlinker -rpath='\$ORIGIN'/../lib/$NAME  -Xlinker '--dynamic-linker=$PREFIX/lib/$NAME/$LINKER' && cp \$($SWIFT build -c release --show-bin-path)/$BIN_NAME ."
+set -e
+
+/usr/sbin/chroot $CHROOT_DIR sh -c "umount /proc"
+
+
+################################################################################
+# Copy all files from the chroot to the target dir
+################################################################################
+
+mkdir -p $DESTDIR$PREFIX/bin $DESTDIR$PREFIX/lib/$NAME
+cp $CHROOT_DIR$CHROOT_BUILD_DIR/$BIN_NAME $DESTDIR$PREFIX/bin
+cp $CHROOT_DIR/lib/$ARCH-linux-gnu/$LINKER $DESTDIR$PREFIX/lib/$NAME
+for lib in $LIBS; do
+  cp $CHROOT_DIR/lib/$ARCH-linux-gnu/$lib $DESTDIR$PREFIX/lib/$NAME
+done
+</file>
+
+<file path="Scripts/alpine/dir2apk.go">
+// Script to convert a package directory into an .apk file.
+//
+// Implements the APK spec: https://wiki.alpinelinux.org/wiki/Apk_spec
+
+package main
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"crypto"
+	"crypto/rsa"
+	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/hex"
+	"encoding/pem"
+	"flag"
+	"fmt"
+	"io"
+	"maps"
+	"os"
+	"path"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+)
+
+func NewPKGInfo() PKGInfo {
+	return PKGInfo{
+		"pkgname":    "age-plugin-se",
+		"pkgdesc":    "age plugin for Apple's Secure Enclave",
+		"url":        "https://github.com/remko/age-plugin-se",
+		"maintainer": "Remko Tronçon <r@mko.re>",
+		"packager":   "Remko Tronçon <r@mko.re>",
+		"origin":     "age-plugin-se",
+		"license":    "MIT",
+	}
+}
+
+func doMain() error {
+	arch := flag.String("arch", "", "")
+	keyfile := flag.String("key", "", "")
+	outdir := flag.String("out", "", "")
+	commit := flag.String("commit", "", "")
+	version := flag.String("version", "", "")
+	flag.Parse()
+	rootdir := flag.Arg(0)
+
+	if *arch == "" {
+		return fmt.Errorf("missing arch")
+	}
+	if *keyfile == "" {
+		return fmt.Errorf("missing key")
+	}
+	if *outdir == "" {
+		return fmt.Errorf("missing out")
+	}
+	if *commit == "" {
+		return fmt.Errorf("missing commit")
+	}
+	if *version == "" {
+		return fmt.Errorf("missing version")
+	}
+	if rootdir == "" {
+		return fmt.Errorf("missing dir")
+	}
+
+	builddate := time.Now()
+	if os.Getenv("SOURCE_DATE_EPOCH") != "" {
+		sourcedate, err := strconv.ParseInt(os.Getenv("SOURCE_DATE_EPOCH"), 10, 0)
+		if err != nil {
+			return err
+		}
+		builddate = time.Unix(sourcedate, 0)
+	}
+
+	////////////////////////////////////////////////////////////////////////////////
+	// Base package
+	////////////////////////////////////////////////////////////////////////////////
+
+	pkginfo := NewPKGInfo()
+	pkginfo["arch"] = *arch
+	pkginfo["builddate"] = strconv.FormatInt(builddate.UnixMilli(), 10)
+	pkginfo["pkgver"] = *version
+	pkginfo["commit"] = *commit
+	if err := CreatePackage(pkginfo, rootdir, func(p string) bool { return !isDocPath(p) }, *outdir, *keyfile, builddate); err != nil {
+		return err
+	}
+
+	////////////////////////////////////////////////////////////////////////////////
+	// Doc package
+	////////////////////////////////////////////////////////////////////////////////
+
+	docpkginfo := NewPKGInfo()
+	docpkginfo["arch"] = "noarch"
+	docpkginfo["builddate"] = pkginfo["builddate"]
+	docpkginfo["pkgver"] = pkginfo["pkgver"]
+	docpkginfo["commit"] = pkginfo["commit"]
+	docpkginfo["pkgdesc"] = pkginfo["pkgdesc"] + " (documentation)"
+	docpkginfo["install_if"] = fmt.Sprintf("docs %s=%s", pkginfo["pkgname"], pkginfo["pkgver"])
+	docpkginfo["pkgname"] = pkginfo["pkgname"] + "-doc"
+
+	if err := CreatePackage(docpkginfo, rootdir, isDocPath, *outdir, *keyfile, builddate); err != nil {
+		return err
+	}
+	return nil
+}
+
+func isDocPath(path string) bool {
+	return strings.Contains(path, "/man/") || strings.Contains("/licenses/", path)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+func CreatePackage(pkginfo PKGInfo, rootdir string, pathfilter func(string) bool, outdir string, keyfile string, buildtime time.Time) error {
+	datapath, size, err := CreateDataTarball(rootdir, pathfilter, buildtime)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(datapath)
+	pkginfo["size"] = strconv.FormatInt(size, 10)
+	pkginfo["datahash"], err = sha256sum(datapath)
+	if err != nil {
+		return err
+	}
+
+	controlseg, err := CreateTarSegment(".PKGINFO", []byte(pkginfo.Marshal()), buildtime)
+	if err != nil {
+		return err
+	}
+
+	signature, err := signHash(controlseg, keyfile)
+	if err != nil {
+		return err
+	}
+	signatureseg, err := CreateTarSegment(fmt.Sprintf(".SIGN.RSA.%s.pub", path.Base(keyfile)), signature, buildtime)
+
+	data, err := os.Open(datapath)
+	if err != nil {
+		return err
+	}
+	defer data.Close()
+	pkg, err := os.Create(path.Join(outdir, fmt.Sprintf("%s-%s-%s.apk", pkginfo["pkgname"], pkginfo["pkgver"], pkginfo["arch"])))
+	if err != nil {
+		return err
+	}
+	defer pkg.Close()
+	pkg.Write(signatureseg)
+	pkg.Write(controlseg)
+	if _, err := io.Copy(pkg, data); err != nil {
+		return err
+	}
+	pkg.Close()
+
+	return nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+func CreateDataTarball(rootdir string, pathfilter func(string) bool, buildtime time.Time) (string, int64, error) {
+	datafile, err := os.CreateTemp("", "apk-data")
+	if err != nil {
+		return "", 0, err
+	}
+	defer datafile.Close()
+	datagz := gzip.NewWriter(datafile)
+	defer datagz.Close()
+	datatar := tar.NewWriter(datagz)
+	defer datatar.Close()
+	var datasize int64 = 0
+
+	tardirs := map[string]struct{}{}
+	dirinfos := map[string]os.FileInfo{}
+
+	err = filepath.Walk(rootdir, func(fpath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			dirinfos[fpath] = info
+			return nil
+		}
+		if !pathfilter(fpath) {
+			return nil
+		}
+
+		// Ensure parent dir entries are written
+		createdirs := []string{}
+		dir := path.Dir(fpath)
+		for {
+			if dir == rootdir {
+				break
+			}
+			if _, ok := tardirs[dir]; ok {
+				break
+			}
+			createdirs = append(createdirs, dir)
+			dir = path.Dir(dir)
+		}
+		for i := len(createdirs) - 1; i >= 0; i-- {
+			dir := createdirs[i]
+			header, err := tar.FileInfoHeader(dirinfos[dir], dir)
+			if err != nil {
+				return err
+			}
+			header.AccessTime = buildtime
+			header.ModTime = buildtime
+			header.ChangeTime = buildtime
+			relpath, err := filepath.Rel(rootdir, dir)
+			if err != nil {
+				return err
+			}
+			header.Name = relpath
+			if err := datatar.WriteHeader(header); err != nil {
+				return err
+			}
+		}
+
+		header, err := tar.FileInfoHeader(info, fpath)
+		if err != nil {
+			return err
+		}
+		header.AccessTime = buildtime
+		header.ModTime = buildtime
+		header.ChangeTime = buildtime
+
+		relpath, err := filepath.Rel(rootdir, fpath)
+		if err != nil {
+			return err
+		}
+		header.Name = relpath
+
+		checksum, err := sha1sum(fpath)
+		if err != nil {
+			return nil
+		}
+		header.PAXRecords = map[string]string{
+			"APK-TOOLS.checksum.SHA1": checksum,
+		}
+
+		if err := datatar.WriteHeader(header); err != nil {
+			return err
+		}
+
+		f, err := os.Open(fpath)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = io.Copy(datatar, f)
+		datasize += header.Size
+
+		return err
+	})
+	if err != nil {
+		os.Remove(datafile.Name())
+		return "", 0, err
+	}
+	return datafile.Name(), datasize, nil
+}
+
+func CreateTarSegment(filename string, contents []byte, buildtime time.Time) ([]byte, error) {
+	tbuf := bytes.NewBuffer(nil)
+	tw := tar.NewWriter(tbuf)
+	defer tw.Close()
+	header := &tar.Header{
+		Name:       filename,
+		Size:       int64(len(contents)),
+		Mode:       0644,
+		AccessTime: buildtime,
+		ModTime:    buildtime,
+		ChangeTime: buildtime,
+	}
+	if err := tw.WriteHeader(header); err != nil {
+		return nil, err
+	}
+	if _, err := tw.Write(contents); err != nil {
+		return nil, err
+	}
+	tw.Close()
+	tbuf.Truncate(tbuf.Len() - 1024)
+
+	gzbuf := bytes.NewBuffer(nil)
+	gzw := gzip.NewWriter(gzbuf)
+	defer gzw.Close()
+	if _, err := gzw.Write(tbuf.Bytes()); err != nil {
+		return nil, err
+	}
+	gzw.Close()
+	return gzbuf.Bytes(), nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+func sha1sum(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	hash := sha1.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func sha256sum(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func signHash(data []byte, keyfile string) ([]byte, error) {
+	h := sha1.New()
+	h.Write(data)
+	hash := h.Sum(nil)
+
+	keypem, err := os.ReadFile(keyfile)
+	if err != nil {
+		return nil, err
+	}
+	block, _ := pem.Decode(keypem)
+	if block == nil {
+		return nil, fmt.Errorf("%s: no pem data found (%d bytes)", keyfile, keypem)
+	}
+	parseResult, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	key := parseResult.(*rsa.PrivateKey)
+
+	signature, err := rsa.SignPKCS1v15(nil, key, crypto.SHA1, hash)
+	if err != nil {
+		return nil, err
+	}
+	return signature, nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type PKGInfo map[string]string
+
+func (pi PKGInfo) Marshal() string {
+	x := ""
+	for _, k := range slices.Sorted(maps.Keys(pi)) {
+		x += fmt.Sprintf("%s = %v\n", k, pi[k])
+	}
+	return x
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+func main() {
+	if err := doMain(); err != nil {
+		panic(err)
+	}
+}
+</file>
+
+<file path="Scripts/alpine/Makefile">
+ABUILD_FLAGS=-r -D "age-plugin-se repository" -P $(CURDIR)/packages
+
+all:
+	abuild $(ABUILD_FLAGS)
+
+clean:
+	-abuild $(ABUILD_FLAGS) cleanpkg
+
+update-checksums:
+	abuild $(ABUILD_FLAGS) checksum
+</file>
+
+<file path="Scripts/alpine/r@mko.re-66596f64.rsa.pub">
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAxUdJY41lK3+wBMY44u8z
+rxtTZUv1/DByU6xtT1Qoo9I8pWfD5KmC8TIRuvXNgzbHDSI8N4+oGWhwMbzk0XZF
+eNxJztLdGF7ZCXuXgxMUamh74m1SVk71Ul5CHz7a+cZ5ZRqQq50X3HdCjWQb/38X
+t381tOBgzcLTmPCCTq2pHyBYsR1EnFnblM+1UyEsvgucX49/tlOxAy7Ps2XVi82b
+FAZOZPXmXnzl9Vc5TiFTopPhlR3pNDzTJQnOPA3s4X2otOVRRHVsL/qd4bUv05iN
+BBoVuV5Ezb+09MD4oZLj5dVCexDZczVm+bLJcpPWnD89YTjsgQjrBnix30VjCbez
+6fZcdWb7DQkIDaezJXTNeXlUYEtQU2hbxlggUZprsFHyx3I2aJMO2oZZ6yoHaD6y
+cybpjWE4ficCeWFVwnC5C4tIxN64CsenyHoe3ze8FICU2PU8DN4k47cngoeOeyGx
+eIJIy+Rlu600cYOPryczIMx4CnuV2jzXVa0dBUazhhTmu6IeR03X5GvmS2OwUZPQ
+kaYUuySklVeuUci1SMRcHuwidDsmlrI0SW6nE6Vg6ES/m9zu/SVYKNoT3UfQhQRZ
+ne0O9IFBcTP3rjLNfMdnCFmlLje+ZWGtpoEQyL7PyxRr3kJuVZ97VtVe4Q1S09M7
+C+ylbDtZjSQQ7P7jw66s580CAwEAAQ==
+-----END PUBLIC KEY-----
+</file>
+
+<file path="Scripts/alpine/README.md">
+# Alpine Linux build scripts
+
+These scripts use a chroot-based build to work around the missing support
+of Swift for musl-based systems.
+
+More details can be found [here](https://mko.re/blog/swift-alpine-packaging/).
+</file>
+
+<file path="Scripts/ConvertBech32HRP.swift">
+#!/usr/bin/swift 
+
+import Foundation
+
+let recipient = CommandLine.arguments[1]
+let targetHRP = CommandLine.arguments[2]
+
+let id = try Bech32().decode(recipient)
+print(Bech32().encode(hrp: targetHRP, data: id.data))
+
+// Copy paste of Sources/Bech32.swift because I don't know how to mix source files
+// from different dirs (not sure if this is possible). Probably should just
+// export and import
+
+// Spec: https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
+// Modified version of https://github.com/0xDEADP00L/Bech32
+
+// Copyright 2018 Evolution Group Limited
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+/// Bech32 checksum implementation
+public class Bech32 {
+  private let gen: [UInt32] = [0x3b6a_57b2, 0x2650_8e6d, 0x1ea1_19fa, 0x3d42_33dd, 0x2a14_62b3]
+  /// Bech32 checksum delimiter
+  private let checksumMarker: String = "1"
+  /// Bech32 character set for encoding
+  private let encCharset: Data = Data("qpzry9x8gf2tvdw0s3jn54khce6mua7l".utf8)
+  /// Bech32 character set for decoding
+  private let decCharset: [Int8] = [
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    15, -1, 10, 17, 21, 20, 26, 30, 7, 5, -1, -1, -1, -1, -1, -1,
+    -1, 29, -1, 24, 13, 25, 9, 8, 23, -1, 18, 22, 31, 27, 19, -1,
+    1, 0, 3, 16, 11, 28, 12, 14, 6, 4, 2, -1, -1, -1, -1, -1,
+    -1, 29, -1, 24, 13, 25, 9, 8, 23, -1, 18, 22, 31, 27, 19, -1,
+    1, 0, 3, 16, 11, 28, 12, 14, 6, 4, 2, -1, -1, -1, -1, -1,
+  ]
+
+  private func convertBits(from: Int, to: Int, pad: Bool, idata: Data) throws -> Data {
+    var acc: Int = 0
+    var bits: Int = 0
+    let maxv: Int = (1 << to) - 1
+    let maxAcc: Int = (1 << (from + to - 1)) - 1
+    var odata = Data()
+    for ibyte in idata {
+      acc = ((acc << from) | Int(ibyte)) & maxAcc
+      bits += from
+      while bits >= to {
+        bits -= to
+        odata.append(UInt8((acc >> bits) & maxv))
+      }
+    }
+    if pad {
+      if bits != 0 {
+        odata.append(UInt8((acc << (to - bits)) & maxv))
+      }
+    } else if bits >= from || ((acc << (to - bits)) & maxv) != 0 {
+      throw DecodingError.bitsConversionFailed
+    }
+    return odata
+  }
+
+  /// Find the polynomial with value coefficients mod the generator as 30-bit.
+  private func polymod(_ values: Data) -> UInt32 {
+    var chk: UInt32 = 1
+    for v in values {
+      let top = (chk >> 25)
+      chk = (chk & 0x1ffffff) << 5 ^ UInt32(v)
+      for i: UInt8 in 0..<5 {
+        chk ^= ((top >> i) & 1) == 0 ? 0 : gen[Int(i)]
+      }
+    }
+    return chk
+  }
+
+  /// Expand a HRP for use in checksum computation.
+  private func expandHrp(_ hrp: String) -> Data {
+    let hrpBytes = Data(hrp.utf8)
+    var result = Data(repeating: 0x00, count: hrpBytes.count * 2 + 1)
+    for (i, c) in hrpBytes.enumerated() {
+      result[i] = c >> 5
+      result[i + hrpBytes.count + 1] = c & 0x1f
+    }
+    result[hrp.count] = 0
+    return result
+  }
+
+  /// Verify checksum
+  private func verifyChecksum(hrp: String, checksum: Data) -> Bool {
+    var data = expandHrp(hrp)
+    data.append(checksum)
+    return polymod(data) == 1
+  }
+
+  /// Create checksum
+  private func createChecksum(hrp: String, values: Data) -> Data {
+    var enc = expandHrp(hrp)
+    enc.append(values)
+    enc.append(Data(repeating: 0x00, count: 6))
+    let mod: UInt32 = polymod(enc) ^ 1
+    var ret: Data = Data(repeating: 0x00, count: 6)
+    for i in 0..<6 {
+      ret[i] = UInt8((mod >> (5 * (5 - i))) & 31)
+    }
+    return ret
+  }
+
+  /// Encode Bech32 string
+  private func encodeBech32(_ hrp: String, values: Data) -> String {
+    let checksum = createChecksum(hrp: hrp, values: values)
+    var combined = values
+    combined.append(checksum)
+
+    let hrpBytes = Data(hrp.utf8)
+    var ret = hrpBytes
+    ret.append(Data("1".utf8))
+    for i in combined {
+      ret.append(encCharset[Int(i)])
+    }
+    return String(decoding: ret, as: UTF8.self)
+  }
+
+  /// Decode Bech32 string
+  public func decodeBech32(_ str: String) throws -> (hrp: String, checksum: Data) {
+    let strBytes = Data(str.utf8)
+    var lower: Bool = false
+    var upper: Bool = false
+    for c in strBytes {
+      // printable range
+      if c < 33 || c > 126 {
+        throw DecodingError.nonPrintableCharacter
+      }
+      // 'a' to 'z'
+      if c >= 97 && c <= 122 {
+        lower = true
+      }
+      // 'A' to 'Z'
+      if c >= 65 && c <= 90 {
+        upper = true
+      }
+    }
+    if lower && upper {
+      throw DecodingError.invalidCase
+    }
+    guard let pos = str.range(of: checksumMarker, options: .backwards)?.lowerBound else {
+      throw DecodingError.noChecksumMarker
+    }
+    let intPos: Int = str.distance(from: str.startIndex, to: pos)
+    guard intPos >= 1 else {
+      throw DecodingError.incorrectHrpSize
+    }
+    guard intPos + 7 <= str.count else {
+      throw DecodingError.incorrectChecksumSize
+    }
+    let vSize: Int = str.count - 1 - intPos
+    var values: Data = Data(repeating: 0x00, count: vSize)
+    for i in 0..<vSize {
+      let c = strBytes[i + intPos + 1]
+      let decInt = decCharset[Int(c)]
+      if decInt == -1 {
+        throw DecodingError.invalidCharacter
+      }
+      values[i] = UInt8(decInt)
+    }
+    let hrp = String(str[..<pos]).lowercased()
+    guard verifyChecksum(hrp: hrp, checksum: values) else {
+      throw DecodingError.checksumMismatch
+    }
+    return (hrp, Data(values[..<(vSize - 6)]))
+  }
+
+  public func encode(hrp: String, data: Data) -> String {
+    let isUpper = hrp[hrp.startIndex].isUppercase
+    let result = encodeBech32(
+      isUpper ? hrp.lowercased() : hrp,
+      values: try! self.convertBits(from: 8, to: 5, pad: true, idata: data))
+    return isUpper ? result.uppercased() : result
+  }
+
+  public func decode(_ str: String) throws -> (hrp: String, data: Data) {
+    let isUpper = str[str.startIndex].isUppercase
+    let result = try decodeBech32(isUpper ? str.lowercased() : str)
+    return (
+      isUpper ? result.hrp.uppercased() : result.hrp,
+      try convertBits(from: 5, to: 8, pad: false, idata: result.checksum)
+    )
+  }
+}
+
+extension Bech32 {
+  public enum DecodingError: LocalizedError {
+    case nonUTF8String
+    case nonPrintableCharacter
+    case invalidCase
+    case noChecksumMarker
+    case incorrectHrpSize
+    case incorrectChecksumSize
+
+    case invalidCharacter
+    case checksumMismatch
+
+    case bitsConversionFailed
+
+    public var errorDescription: String? {
+      switch self {
+      case .bitsConversionFailed:
+        return "Failed to perform bits conversion"
+      case .checksumMismatch:
+        return "Checksum doesn't match"
+      case .incorrectChecksumSize:
+        return "Checksum size too low"
+      case .incorrectHrpSize:
+        return "Human-readable-part is too small or empty"
+      case .invalidCase:
+        return "String contains mixed case characters"
+      case .invalidCharacter:
+        return "Invalid character met on decoding"
+      case .noChecksumMarker:
+        return "Checksum delimiter not found"
+      case .nonPrintableCharacter:
+        return "Non printable character in input string"
+      case .nonUTF8String:
+        return "String cannot be decoded by utf8 decoder"
+      }
+    }
+  }
+}
+</file>
+
+<file path="Scripts/ProcessCoverage.swift">
+#!/usr/bin/swift 
+
+//
+// Postprocesses an LLVM coverage report, as output by `swift test --enable-coverage`.
+//
+// - Filters files out of the report that are not interesting (tests, package
+//   dependencies)
+// - Generates an HTML report of the coverage, with annotated source code
+// - Prints a summary report to standard output
+// - Generates an SVG of a coverage badge that can be used in the README
+//
+
+import Foundation
+
+let inputPath = CommandLine.arguments[1]
+let outputPath = CommandLine.arguments[2]
+let htmlOutputPath = CommandLine.arguments[3]
+let badgeOutputPath = CommandLine.arguments[4]
+
+var report = try JSONDecoder().decode(
+  CoverageReport.self,
+  from: try Data(contentsOf: URL(fileURLWithPath: inputPath))
+)
+
+// Filter out data we don't need
+// Ideally, this wouldn't be necessary, and we could specify not to record coverage for
+// these files
+for di in report.data.indices {
+  report.data[di].files.removeAll(where: { f in
+    f.filename.contains("Tests/") || f.filename.contains(".build/")
+  })
+  // Update (some) totals
+  (report.data[di].totals.lines.covered, report.data[di].totals.lines.count) =
+    report.data[di].files.reduce(
+      (0, 0),
+      { acc, next in
+        (
+          acc.0 + next.summary.lines.covered,
+          acc.1 + next.summary.lines.count
+        )
+      })
+  report.data[di].totals.lines.percent =
+    100 * Float(report.data[di].totals.lines.covered) / Float(report.data[di].totals.lines.count)
+}
+
+// Write out filtered report
+FileManager.default.createFile(
+  atPath: outputPath,
+  contents: try JSONEncoder().encode(report)
+)
+
+////////////////////////////////////////////////////////////////////////////////
+// Summary report
+////////////////////////////////////////////////////////////////////////////////
+
+var totalCovered = 0
+var totalCount = 0
+print("Code coverage (lines):")
+for d in report.data {
+  for f in d.files {
+    let filename = f.filename.stripPrefix(FileManager.default.currentDirectoryPath + "/")
+    let lines = String(format: "%d/%d", f.summary.lines.covered, f.summary.lines.count)
+    let percent = String(
+      format: "(%.01f%%)", Float(f.summary.lines.covered * 100) / Float(f.summary.lines.count))
+    print(
+      "  \(filename.rightPadded(toLength: 24)) \(lines.leftPadded(toLength: 10)) \(percent.leftPadded(toLength: 8))"
+    )
+  }
+  totalCovered += d.totals.lines.covered
+  totalCount += d.totals.lines.count
+}
+let lines = String(format: "%d/%d", totalCovered, totalCount)
+let percent = String(
+  format: "(%.01f%%)", Float(totalCovered * 100) / Float(totalCount))
+print("  ---")
+print(
+  "  \("TOTAL".rightPadded(toLength: 24)) \(lines.leftPadded(toLength: 10)) \(percent.leftPadded(toLength: 8))"
+)
+
+////////////////////////////////////////////////////////////////////////////////
+// Coverage badge
+////////////////////////////////////////////////////////////////////////////////
+
+let percentRounded = Int((Float(totalCovered * 100) / Float(totalCount)).rounded())
+FileManager.default.createFile(
+  atPath: badgeOutputPath,
+  contents: Data(
+    """
+    <svg xmlns="http://www.w3.org/2000/svg" width="105" height="20">
+      <title>Coverage - \(percent)%</title>
+      <defs>
+        <linearGradient id="workflow-fill" x1="50%" y1="0%" x2="50%" y2="100%">
+          <stop stop-color="#444D56" offset="0%"></stop>
+          <stop stop-color="#24292E" offset="100%"></stop>
+        </linearGradient>
+        <linearGradient id="state-fill" x1="50%" y1="0%" x2="50%" y2="100%">
+          <stop stop-color="#34D058" offset="0%"></stop>
+          <stop stop-color="#28A745" offset="100%"></stop>
+        </linearGradient>
+      </defs>
+      <g fill="none" fill-rule="evenodd">
+        <g font-family="&#39;DejaVu Sans&#39;,Verdana,Geneva,sans-serif" font-size="11">
+          <path id="workflow-bg" d="M0,3 C0,1.3431 1.3552,0 3.02702703,0 L65,0 L65,20 L3.02702703,20 C1.3552,20 0,18.6569 0,17 L0,3 Z" fill="url(#workflow-fill)" fill-rule="nonzero"></path>
+          <text fill="#010101" fill-opacity=".3">
+            <tspan x="6" y="15" aria-hidden="true">Coverage</tspan>
+          </text>
+          <text fill="#FFFFFF">
+            <tspan x="6" y="14">Coverage</tspan>
+          </text>
+        </g>
+        <g transform="translate(65)" font-family="&#39;DejaVu Sans&#39;,Verdana,Geneva,sans-serif" font-size="11">
+          <path d="M0 0h46.939C48.629 0 40 1.343 40 3v14c0 1.657-1.37 3-3.061 3H0V0z" id="state-bg" fill="url(#state-fill)" fill-rule="nonzero"></path>
+          <text fill="#010101" fill-opacity=".3" aria-hidden="true">
+            <tspan x="7" y="15">\(percentRounded)%</tspan>
+          </text>
+          <text fill="#FFFFFF">
+            <tspan x="7" y="14">\(percentRounded)%</tspan>
+          </text>
+        </g>
+      </g>
+    </svg>
+    """.utf8
+  ))
+
+////////////////////////////////////////////////////////////////////////////////
+// HTML Report
+////////////////////////////////////////////////////////////////////////////////
+
+var out = ""
+var files = ""
+var fileID = 0
+for d in report.data {
+  for f in d.files {
+    let filename = f.filename.stripPrefix(FileManager.default.currentDirectoryPath + "/")
+    let percent = String(
+      format: "%.01f", Float(f.summary.lines.covered * 100) / Float(f.summary.lines.count))
+    files += "<option value=\"f\(fileID)\">\(filename.htmlEscaped) (\(percent)%)</option>"
+    out += "<pre id=\"f\(fileID)\" style=\"display: none\"><span>"
+    var segments = f.segments
+    for (index, line) in try
+      (String(contentsOfFile: f.filename, encoding: .utf8).split(omittingEmptySubsequences: false) {
+        $0.isNewline
+      })
+      .enumerated()
+    {
+      var l = line
+      var columnOffset = 0
+      while let segment = segments.first {
+        if segment.line != index + 1 {
+          break
+        }
+        var endIndex = l.utf8.index(l.startIndex, offsetBy: segment.column - 1 - columnOffset)
+        if endIndex > l.endIndex {
+          endIndex = l.endIndex
+        }
+        columnOffset = segment.column - 1
+        let spanClass = !segment.hasCount ? "" : segment.count > 0 ? "c" : "nc"
+        out +=
+          String(l[l.startIndex..<endIndex]).htmlEscaped
+          + "</span><span class=\"\(spanClass)\">"
+        l = l[endIndex..<l.endIndex]
+        segments.removeFirst(1)
+      }
+      out += String(l).htmlEscaped + "\n"
+    }
+    out += "</span></pre>"
+    fileID += 1
+  }
+}
+
+out =
+  """
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+      <title>Coverage</title>
+      <style>
+        body {
+          background: #111;
+          color: #888;
+          font-family: monospace;
+          font-size: 15px;
+        }
+        nav { position: fixed; top: 0; }
+        pre { margin-top: 25px; }
+        .c { color: green; }
+        .nc { color: red; }
+      </style>
+    </head>
+    <body>
+      <nav>
+        <select id="files">
+          \(files)
+        </select>
+      </nav>
+  """ + out + """
+    <script>
+      (function() {
+        var filesEl = document.getElementById('files');
+        var selectedEl;
+        function select(fileID) {
+          if (selectedEl != null) {
+            selectedEl.style.display = 'none';
+          }
+          selectedEl = document.getElementById(fileID);
+          if (selectedEl == null) {
+            return;
+          }
+          filesEl.value = fileID;
+          selectedEl.style.display = 'block';
+          location.hash = fileID;
+        }
+
+        if (location.hash !== "") {
+          select(location.hash.substr(1));
+        }
+        if (selectedEl == null) {
+          select("f0");
+        }
+
+        filesEl.addEventListener('change', function() { 
+          select(filesEl.value);
+          window.scrollTo(0, 0);
+        } , false);
+      })();
+    </script>
+    </body></html>
+    """
+FileManager.default.createFile(
+  atPath: htmlOutputPath,
+  contents: Data(out.utf8)
+)
+
+////////////////////////////////////////////////////////////////////////////////
+// LLVM Coverage Export JSON Format
+// See https://github.com/llvm/llvm-project/blob/main/llvm/tools/llvm-cov/CoverageExporterJson.cpp
+////////////////////////////////////////////////////////////////////////////////
+
+struct CoverageReport: Codable {
+  var type: String
+  var version: String
+  var data: [CoverageExport]
+}
+
+struct CoverageExport: Codable {
+  var totals: CoverageSummary
+  var files: [CoverageFile]
+  var functions: [CoverageFunction]
+}
+
+struct CoverageFile: Codable {
+  var filename: String
+  var summary: CoverageSummary
+  var segments: [CoverageSegment]
+  var branches: [CoverageBranch]
+  var expansions: [CoverageExpansion]
+}
+
+struct CoverageFunction: Codable {
+  var count: Int
+  var filenames: [String]
+  var name: String
+  var regions: [CoverageRegion]
+  var branches: [CoverageBranch]
+}
+
+struct CoverageSummary: Codable {
+  var lines: CoverageSummaryEntry
+  var branches: CoverageSummaryEntry
+  var functions: CoverageSummaryEntry
+  var instantiations: CoverageSummaryEntry
+  var regions: CoverageSummaryEntry
+}
+
+struct CoverageSummaryEntry: Codable {
+  var count: Int
+  var covered: Int
+  var percent: Float
+  var notcovered: Int?
+}
+
+struct CoverageSegment {
+  var line: Int
+  var column: Int
+  var count: Int
+  var hasCount: Bool
+  var isRegionEntry: Bool
+  var isGapRegion: Bool
+}
+
+extension CoverageSegment: Decodable {
+  init(from decoder: Decoder) throws {
+    var c = try decoder.unkeyedContainer()
+    line = try c.decode(Int.self)
+    column = try c.decode(Int.self)
+    count = try c.decode(Int.self)
+    hasCount = try c.decode(Bool.self)
+    isRegionEntry = try c.decode(Bool.self)
+    isGapRegion = try c.decode(Bool.self)
+  }
+}
+
+extension CoverageSegment: Encodable {
+  func encode(to encoder: Encoder) throws {
+    var c = encoder.unkeyedContainer()
+    try c.encode(line)
+    try c.encode(column)
+    try c.encode(count)
+    try c.encode(hasCount)
+    try c.encode(isRegionEntry)
+    try c.encode(isGapRegion)
+  }
+}
+
+struct CoverageRegion {
+  var lineStart: Int
+  var columnStart: Int
+  var lineEnd: Int
+  var columnEnd: Int
+  var executionCount: Int
+  var fileID: Int
+  var expandedFileID: Int
+  var regionKind: Int
+}
+
+extension CoverageRegion: Decodable {
+  init(from decoder: Decoder) throws {
+    var c = try decoder.unkeyedContainer()
+    lineStart = try c.decode(Int.self)
+    columnStart = try c.decode(Int.self)
+    lineEnd = try c.decode(Int.self)
+    columnEnd = try c.decode(Int.self)
+    executionCount = try c.decode(Int.self)
+    fileID = try c.decode(Int.self)
+    expandedFileID = try c.decode(Int.self)
+    regionKind = try c.decode(Int.self)
+  }
+}
+
+extension CoverageRegion: Encodable {
+  func encode(to encoder: Encoder) throws {
+    var c = encoder.unkeyedContainer()
+    try c.encode(lineStart)
+    try c.encode(columnStart)
+    try c.encode(lineEnd)
+    try c.encode(columnEnd)
+    try c.encode(executionCount)
+    try c.encode(fileID)
+    try c.encode(expandedFileID)
+    try c.encode(regionKind)
+  }
+}
+
+struct CoverageBranch: Codable {}
+
+struct CoverageExpansion: Codable {}
+
+////////////////////////////////////////////////////////////////////////////////
+// Misc utility
+////////////////////////////////////////////////////////////////////////////////
+
+extension String {
+  func leftPadded(toLength: Int) -> String {
+    if count < toLength {
+      return String(repeating: " ", count: toLength - count) + self
+    } else {
+      return self
+    }
+  }
+
+  func rightPadded(toLength: Int) -> String {
+    if count < toLength {
+      return self + String(repeating: " ", count: toLength - count)
+    } else {
+      return self
+    }
+  }
+
+  func stripPrefix(_ prefix: String) -> String {
+    return self.hasPrefix(prefix) ? String(self.dropFirst(prefix.count)) : self
+  }
+
+  var htmlEscaped: String {
+    return self.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(
+      of: "<", with: "&lt;"
+    ).replacingOccurrences(
+      of: ">", with: "&gt;")
+  }
+}
+</file>
+
+<file path="Sources/Base64.swift">
+import Foundation
+
+extension Data {
+  init?(base64RawEncoded: String) {
+    if base64RawEncoded.hasSuffix("=") {
+      return nil
+    }
+    var str = base64RawEncoded
+    switch base64RawEncoded.count % 4 {
+    case 2:
+      str += "=="
+    case 3:
+      str += "="
+    default:
+      ()
+    }
+    guard let data = Data(base64Encoded: str) else {
+      return nil
+    }
+    self = data
+  }
+
+  var base64RawEncodedData: Data {
+    var s = base64EncodedData(options: [
+      Base64EncodingOptions.lineLength64Characters, Base64EncodingOptions.endLineWithLineFeed,
+    ])
+    if let pi = s.firstIndex(of: Character("=").asciiValue!) {
+      s = Data(s[s.startIndex..<pi])
+    }
+    return s
+  }
+
+  var base64RawEncodedString: String {
+    return String(decoding: base64RawEncodedData, as: UTF8.self)
+  }
+}
+</file>
+
+<file path="Sources/Bech32.swift">
+// Spec: https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
+// Modified version of https://github.com/0xDEADP00L/Bech32
+
+// Copyright 2018 Evolution Group Limited
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+import Foundation
+
+/// Bech32 checksum implementation
+public class Bech32 {
+  private let gen: [UInt32] = [0x3b6a_57b2, 0x2650_8e6d, 0x1ea1_19fa, 0x3d42_33dd, 0x2a14_62b3]
+  /// Bech32 checksum delimiter
+  private let checksumMarker: String = "1"
+  /// Bech32 character set for encoding
+  private let encCharset: Data = Data("qpzry9x8gf2tvdw0s3jn54khce6mua7l".utf8)
+  /// Bech32 character set for decoding
+  private let decCharset: [Int8] = [
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    15, -1, 10, 17, 21, 20, 26, 30, 7, 5, -1, -1, -1, -1, -1, -1,
+    -1, 29, -1, 24, 13, 25, 9, 8, 23, -1, 18, 22, 31, 27, 19, -1,
+    1, 0, 3, 16, 11, 28, 12, 14, 6, 4, 2, -1, -1, -1, -1, -1,
+    -1, 29, -1, 24, 13, 25, 9, 8, 23, -1, 18, 22, 31, 27, 19, -1,
+    1, 0, 3, 16, 11, 28, 12, 14, 6, 4, 2, -1, -1, -1, -1, -1,
+  ]
+
+  private func convertBits(from: Int, to: Int, pad: Bool, idata: Data) throws -> Data {
+    var acc: Int = 0
+    var bits: Int = 0
+    let maxv: Int = (1 << to) - 1
+    let maxAcc: Int = (1 << (from + to - 1)) - 1
+    var odata = Data()
+    for ibyte in idata {
+      acc = ((acc << from) | Int(ibyte)) & maxAcc
+      bits += from
+      while bits >= to {
+        bits -= to
+        odata.append(UInt8((acc >> bits) & maxv))
+      }
+    }
+    if pad {
+      if bits != 0 {
+        odata.append(UInt8((acc << (to - bits)) & maxv))
+      }
+    } else if bits >= from || ((acc << (to - bits)) & maxv) != 0 {
+      throw DecodingError.bitsConversionFailed
+    }
+    return odata
+  }
+
+  /// Find the polynomial with value coefficients mod the generator as 30-bit.
+  private func polymod(_ values: Data) -> UInt32 {
+    var chk: UInt32 = 1
+    for v in values {
+      let top = (chk >> 25)
+      chk = (chk & 0x1ffffff) << 5 ^ UInt32(v)
+      for i: UInt8 in 0..<5 {
+        chk ^= ((top >> i) & 1) == 0 ? 0 : gen[Int(i)]
+      }
+    }
+    return chk
+  }
+
+  /// Expand a HRP for use in checksum computation.
+  private func expandHrp(_ hrp: String) -> Data {
+    let hrpBytes = Data(hrp.utf8)
+    var result = Data(repeating: 0x00, count: hrpBytes.count * 2 + 1)
+    for (i, c) in hrpBytes.enumerated() {
+      result[i] = c >> 5
+      result[i + hrpBytes.count + 1] = c & 0x1f
+    }
+    result[hrp.count] = 0
+    return result
+  }
+
+  /// Verify checksum
+  private func verifyChecksum(hrp: String, checksum: Data) -> Bool {
+    var data = expandHrp(hrp)
+    data.append(checksum)
+    return polymod(data) == 1
+  }
+
+  /// Create checksum
+  private func createChecksum(hrp: String, values: Data) -> Data {
+    var enc = expandHrp(hrp)
+    enc.append(values)
+    enc.append(Data(repeating: 0x00, count: 6))
+    let mod: UInt32 = polymod(enc) ^ 1
+    var ret: Data = Data(repeating: 0x00, count: 6)
+    for i in 0..<6 {
+      ret[i] = UInt8((mod >> (5 * (5 - i))) & 31)
+    }
+    return ret
+  }
+
+  /// Encode Bech32 string
+  private func encodeBech32(_ hrp: String, values: Data) -> String {
+    let checksum = createChecksum(hrp: hrp, values: values)
+    var combined = values
+    combined.append(checksum)
+
+    let hrpBytes = Data(hrp.utf8)
+    var ret = hrpBytes
+    ret.append(Data("1".utf8))
+    for i in combined {
+      ret.append(encCharset[Int(i)])
+    }
+    return String(decoding: ret, as: UTF8.self)
+  }
+
+  /// Decode Bech32 string
+  public func decodeBech32(_ str: String) throws -> (hrp: String, checksum: Data) {
+    let strBytes = Data(str.utf8)
+    var lower: Bool = false
+    var upper: Bool = false
+    for c in strBytes {
+      // printable range
+      if c < 33 || c > 126 {
+        throw DecodingError.nonPrintableCharacter
+      }
+      // 'a' to 'z'
+      if c >= 97 && c <= 122 {
+        lower = true
+      }
+      // 'A' to 'Z'
+      if c >= 65 && c <= 90 {
+        upper = true
+      }
+    }
+    if lower && upper {
+      throw DecodingError.invalidCase
+    }
+    guard let pos = str.range(of: checksumMarker, options: .backwards)?.lowerBound else {
+      throw DecodingError.noChecksumMarker
+    }
+    let intPos: Int = str.distance(from: str.startIndex, to: pos)
+    guard intPos >= 1 else {
+      throw DecodingError.incorrectHrpSize
+    }
+    guard intPos + 7 <= str.count else {
+      throw DecodingError.incorrectChecksumSize
+    }
+    let vSize: Int = str.count - 1 - intPos
+    var values: Data = Data(repeating: 0x00, count: vSize)
+    for i in 0..<vSize {
+      let c = strBytes[i + intPos + 1]
+      let decInt = decCharset[Int(c)]
+      if decInt == -1 {
+        throw DecodingError.invalidCharacter
+      }
+      values[i] = UInt8(decInt)
+    }
+    let hrp = String(str[..<pos]).lowercased()
+    guard verifyChecksum(hrp: hrp, checksum: values) else {
+      throw DecodingError.checksumMismatch
+    }
+    return (hrp, Data(values[..<(vSize - 6)]))
+  }
+
+  public func encode(hrp: String, data: Data) -> String {
+    let isUpper = hrp[hrp.startIndex].isUppercase
+    let result = encodeBech32(
+      isUpper ? hrp.lowercased() : hrp,
+      values: try! self.convertBits(from: 8, to: 5, pad: true, idata: data))
+    return isUpper ? result.uppercased() : result
+  }
+
+  public func decode(_ str: String) throws -> (hrp: String, data: Data) {
+    let isUpper = str[str.startIndex].isUppercase
+    let result = try decodeBech32(isUpper ? str.lowercased() : str)
+    return (
+      isUpper ? result.hrp.uppercased() : result.hrp,
+      try convertBits(from: 5, to: 8, pad: false, idata: result.checksum)
+    )
+  }
+}
+
+extension Bech32 {
+  public enum DecodingError: LocalizedError {
+    case nonUTF8String
+    case nonPrintableCharacter
+    case invalidCase
+    case noChecksumMarker
+    case incorrectHrpSize
+    case incorrectChecksumSize
+
+    case invalidCharacter
+    case checksumMismatch
+
+    case bitsConversionFailed
+
+    public var errorDescription: String? {
+      switch self {
+      case .bitsConversionFailed:
+        return "Failed to perform bits conversion"
+      case .checksumMismatch:
+        return "Checksum doesn't match"
+      case .incorrectChecksumSize:
+        return "Checksum size too low"
+      case .incorrectHrpSize:
+        return "Human-readable-part is too small or empty"
+      case .invalidCase:
+        return "String contains mixed case characters"
+      case .invalidCharacter:
+        return "Invalid character met on decoding"
+      case .noChecksumMarker:
+        return "Checksum delimiter not found"
+      case .nonPrintableCharacter:
+        return "Non printable character in input string"
+      case .nonUTF8String:
+        return "String cannot be decoded by utf8 decoder"
+      }
+    }
+  }
+}
+</file>
+
+<file path="Sources/CLI.swift">
+import Foundation
+
+let version = "v0.1.4"
+
+@main
+struct CLI {
+  static func main() {
+    do {
+      let plugin = Plugin(crypto: CryptoKitCrypto(), stream: StandardIOStream())
+      let options = try Options.parse(CommandLine.arguments)
+      switch options.command {
+      case .help:
+        print(Options.help)
+      case .version:
+        print(version)
+      case .keygen:
+        let result = try plugin.generateKey(
+          accessControl: options.accessControl.keyAccessControl,
+          recipientType: options.recipientType.recipientType, now: Date())
+        if let outputFile = options.output {
+          FileManager.default.createFile(
+            atPath: outputFile,
+            contents: Data(result.0.utf8),
+            attributes: [.posixPermissions: 0o600]
+          )
+          print("Public key: \(result.1)")
+        } else {
+          print(result.0)
+        }
+      case .recipients:
+        var input = ""
+        if let inputFile = options.input {
+          input = try String(
+            contentsOfFile: inputFile)
+        } else {
+          input = try String(data: FileHandle.standardInput.readToEnd()!, encoding: .utf8)!
+        }
+        let result = try plugin.generateRecipients(
+          input: input, recipientType: options.recipientType.recipientType)
+        if let outputFile = options.output {
+          FileManager.default.createFile(
+            atPath: outputFile,
+            contents: Data(result.utf8),
+            attributes: [.posixPermissions: 0o600]
+          )
+        } else if result != "" {
+          print(result)
+        }
+      case .plugin(let sm):
+        switch sm {
+        case .recipientV1:
+          plugin.runRecipientV1()
+        case .identityV1:
+          plugin.runIdentityV1()
+        }
+      }
+    } catch {
+      print("\(CommandLine.arguments[0]): error: \(error.localizedDescription)")
+      exit(-1)
+    }
+  }
+}
+
+/// Command-line options parser
+struct Options {
+  enum Error: LocalizedError, Equatable {
+    case unknownOption(String)
+    case missingValue(String)
+    case invalidValue(String, String)
+
+    public var errorDescription: String? {
+      switch self {
+      case .unknownOption(let option): return "unknown option: `\(option)`"
+      case .missingValue(let option): return "missing value for option `\(option)`"
+      case .invalidValue(let option, let value):
+        return "invalid value for option `\(option)`: `\(value)`"
+      }
+    }
+  }
+
+  enum StateMachine: String {
+    case recipientV1 = "recipient-v1"
+    case identityV1 = "identity-v1"
+  }
+
+  enum Command: Equatable {
+    case help
+    case version
+    case keygen
+    case recipients
+    case plugin(StateMachine)
+  }
+  var command: Command
+
+  var output: String?
+  var input: String?
+
+  enum AccessControl: String {
+    case none = "none"
+    case passcode = "passcode"
+    case anyBiometry = "any-biometry"
+    case anyBiometryOrPasscode = "any-biometry-or-passcode"
+    case anyBiometryAndPasscode = "any-biometry-and-passcode"
+    case currentBiometry = "current-biometry"
+    case currentBiometryAndPasscode = "current-biometry-and-passcode"
+
+    var keyAccessControl: KeyAccessControl {
+      switch self {
+      case .none: return KeyAccessControl.none
+      case .passcode: return KeyAccessControl.passcode
+      case .anyBiometry: return KeyAccessControl.anyBiometry
+      case .anyBiometryOrPasscode: return KeyAccessControl.anyBiometryOrPasscode
+      case .anyBiometryAndPasscode: return KeyAccessControl.anyBiometryAndPasscode
+      case .currentBiometry: return KeyAccessControl.currentBiometry
+      case .currentBiometryAndPasscode: return KeyAccessControl.currentBiometryAndPasscode
+      }
+    }
+  }
+  var accessControl = AccessControl.anyBiometryOrPasscode
+
+  enum RecipientType: String {
+    case se = "se"
+    case p256tag = "p256tag"
+
+    var recipientType: age_plugin_se.RecipientType {
+      switch self {
+      case .se: return .se
+      case .p256tag: return .p256tag
+      }
+    }
+  }
+
+  var recipientType: RecipientType = .se
+
+  static let help =
+    """
+    Usage:
+      age-plugin-se keygen [-o OUTPUT] [--access-control ACCESS_CONTROL]
+      age-plugin-se recipients [-o OUTPUT] [-i INPUT]
+
+    Description:
+      The `keygen` subcommand generates a new private key bound to the current 
+      Secure Enclave, with the given access controls, and outputs it to OUTPUT 
+      or standard output.
+
+      The `recipients` subcommand reads an identity file from INPUT or standard 
+      input, and outputs the corresponding recipient(s) to OUTPUT or to standard 
+      output.
+
+    Options:
+      --access-control ACCESS_CONTROL   Access control for using the generated key.
+                                        
+                                        When using current biometry, adding or removing a 
+                                        fingerprint stops the key from working. Removing an 
+                                        added fingerprint enables the key again. 
+
+                                        Supported values: none, passcode, 
+                                          any-biometry, any-biometry-and-passcode, 
+                                          any-biometry-or-passcode, current-biometry, 
+                                          current-biometry-and-passcode
+                                        Default: any-biometry-or-passcode.                          
+
+      -i, --input INPUT                 Read data from the file at path INPUT
+
+      -o, --output OUTPUT               Write the result to the file at path OUTPUT
+
+    Example:
+      $ age-plugin-se keygen -o key.txt
+      Public key: age1se1qg8vwwqhztnh3vpt2nf2xwn7famktxlmp0nmkfltp8lkvzp8nafkqleh258
+      $ tar cvz ~/data | age -r age1se1qgg72x2qfk9wg3wh0qg9u0v7l5dkq4jx69fv80p6wdus3ftg6flwg5dz2dp > data.tar.gz.age
+      $ age --decrypt -i key.txt data.tar.gz.age > data.tar.gz
+    """
+
+  static func parse(_ args: [String]) throws -> Options {
+    var opts = Options(command: .help)
+    var i = 1
+    while i < args.count {
+      let arg = args[i]
+      if arg == "keygen" {
+        opts.command = .keygen
+      } else if arg == "recipients" {
+        opts.command = .recipients
+      } else if ["--help", "-h"].contains(arg) {
+        opts.command = .help
+        break
+      } else if ["--version"].contains(arg) {
+        opts.command = .version
+        break
+      } else if [
+        "--age-plugin", "-i", "--input", "-o", "--output", "--access-control", "--recipient-type",
+      ].contains(where: {
+        arg == $0 || arg.hasPrefix($0 + "=")
+      }) {
+        let argps = arg.split(separator: "=", maxSplits: 1)
+        let value: String
+        if argps.count == 1 {
+          i += 1
+          if i >= args.count {
+            throw Error.missingValue(arg)
+          }
+          value = args[i]
+        } else {
+          value = String(argps[1])
+        }
+        let arg = String(argps[0])
+        switch arg {
+        case "--age-plugin":
+          opts.command = try .plugin(
+            StateMachine(rawValue: value) ?? { throw Error.invalidValue(arg, value) }())
+        case "-i", "--input":
+          opts.input = value
+        case "-o", "--output":
+          opts.output = value
+        case "--access-control":
+          opts.accessControl =
+            try AccessControl(rawValue: value) ?? { throw Error.invalidValue(arg, value) }()
+        case "--recipient-type":
+          opts.recipientType =
+            try RecipientType(rawValue: value) ?? { throw Error.invalidValue(arg, value) }()
+        default:
+          assert(false)
+        }
+      } else {
+        throw Error.unknownOption(arg)
+      }
+      i += 1
+    }
+    return opts
+  }
+}
+</file>
+
+<file path="Sources/Crypto.swift">
+import Foundation
+
+#if !os(Linux) && !os(Windows)
+  import CryptoKit
+  import LocalAuthentication
+#else
+  import Crypto
+  struct SecAccessControl {}
+#endif
+
+/// Abstraction for random/unpredictable/system-specific crypto operations
+protocol Crypto {
+  var isSecureEnclaveAvailable: Bool { get }
+
+  func newSecureEnclavePrivateKey(dataRepresentation: Data) throws -> SecureEnclavePrivateKey
+  func newSecureEnclavePrivateKey(accessControl: SecAccessControl) throws -> SecureEnclavePrivateKey
+  func newEphemeralPrivateKey() -> P256.KeyAgreement.PrivateKey
+}
+
+protocol SecureEnclavePrivateKey {
+  var publicKey: P256.KeyAgreement.PublicKey { get }
+  var dataRepresentation: Data { get }
+
+  func sharedSecretFromKeyAgreement(with publicKeyShare: P256.KeyAgreement.PublicKey) throws
+    -> SharedSecret
+}
+
+#if !os(Linux) && !os(Windows)
+  class CryptoKitCrypto: Crypto {
+    let context = LAContext()
+
+    var isSecureEnclaveAvailable: Bool {
+      return SecureEnclave.isAvailable
+    }
+
+    func newSecureEnclavePrivateKey(dataRepresentation: Data) throws -> SecureEnclavePrivateKey {
+      return try SecureEnclave.P256.KeyAgreement.PrivateKey(
+        dataRepresentation: dataRepresentation, authenticationContext: context)
+    }
+
+    func newSecureEnclavePrivateKey(accessControl: SecAccessControl) throws
+      -> SecureEnclavePrivateKey
+    {
+      return try SecureEnclave.P256.KeyAgreement.PrivateKey(
+        accessControl: accessControl, authenticationContext: context)
+    }
+
+    func newEphemeralPrivateKey() -> P256.KeyAgreement.PrivateKey {
+      return P256.KeyAgreement.PrivateKey()
+    }
+  }
+
+  extension SecureEnclave.P256.KeyAgreement.PrivateKey: SecureEnclavePrivateKey {
+  }
+
+#else
+
+  class CryptoKitCrypto: Crypto {
+    var isSecureEnclaveAvailable: Bool {
+      return false
+    }
+
+    func newSecureEnclavePrivateKey(dataRepresentation: Data) throws -> SecureEnclavePrivateKey {
+      throw Plugin.Error.seUnsupported
+    }
+
+    func newSecureEnclavePrivateKey(accessControl: SecAccessControl) throws
+      -> SecureEnclavePrivateKey
+    {
+      throw Plugin.Error.seUnsupported
+    }
+
+    func newEphemeralPrivateKey() -> P256.KeyAgreement.PrivateKey {
+      return P256.KeyAgreement.PrivateKey()
+    }
+  }
+
+#endif
+</file>
+
+<file path="Sources/Plugin.swift">
+import Foundation
+
+#if !os(Linux) && !os(Windows)
+  import CryptoKit
+#else
+  import Crypto
+#endif
+
+class Plugin {
+  var crypto: Crypto
+  var stream: Stream
+
+  init(crypto: Crypto, stream: Stream) {
+    self.crypto = crypto
+    self.stream = stream
+  }
+
+  func generateKey(accessControl: KeyAccessControl, recipientType: RecipientType, now: Date) throws
+    -> (String, String)
+  {
+    if !crypto.isSecureEnclaveAvailable {
+      throw Error.seUnsupported
+    }
+    #if !os(Linux) && !os(Windows)
+      let createdAt = now.ISO8601Format()
+      var accessControlFlags: SecAccessControlCreateFlags = [.privateKeyUsage]
+      if accessControl == .anyBiometry || accessControl == .anyBiometryAndPasscode {
+        accessControlFlags.insert(.biometryAny)
+      }
+      if accessControl == .currentBiometry || accessControl == .currentBiometryAndPasscode {
+        accessControlFlags.insert(.biometryCurrentSet)
+      }
+      if accessControl == .passcode || accessControl == .anyBiometryAndPasscode
+        || accessControl == .currentBiometryAndPasscode
+      {
+        accessControlFlags.insert(.devicePasscode)
+      }
+      if accessControl == .anyBiometryOrPasscode {
+        accessControlFlags.insert(.userPresence)
+      }
+      var error: Unmanaged<CFError>?
+      guard
+        let secAccessControl = SecAccessControlCreateWithFlags(
+          kCFAllocatorDefault, kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+          accessControlFlags,
+          &error)
+      else {
+        throw error!.takeRetainedValue() as Swift.Error
+      }
+    #else
+      // FIXME: ISO8601Format currently not supported on Linux:
+      //   https://github.com/apple/swift-corelibs-foundation/issues/4618
+      // This code is only reached in unit tests on Linux anyway
+      let createdAt = "1997-02-02T02:26:51Z"
+      let secAccessControl = SecAccessControl()
+    #endif
+
+    let privateKey = try crypto.newSecureEnclavePrivateKey(accessControl: secAccessControl)
+    let recipient = privateKey.publicKey.ageRecipient(type: recipientType)
+    let identity = privateKey.ageIdentity
+    let accessControlStr: String
+    switch accessControl {
+    case .none: accessControlStr = "none"
+    case .passcode: accessControlStr = "passcode"
+    case .anyBiometry: accessControlStr = "any biometry"
+    case .anyBiometryOrPasscode: accessControlStr = "any biometry or passcode"
+    case .anyBiometryAndPasscode: accessControlStr = "any biometry and passcode"
+    case .currentBiometry: accessControlStr = "current biometry"
+    case .currentBiometryAndPasscode: accessControlStr = "current biometry and passcode"
+    }
+
+    let contents = """
+      # created: \(createdAt)
+      # access control: \(accessControlStr)
+      # public key: \(recipient)
+      \(identity)
+
+      """
+
+    return (contents, recipient)
+  }
+
+  func generateRecipients(input: String, recipientType: RecipientType) throws -> String {
+    var recipients: [String] = []
+    for l in input.split(whereSeparator: \.isNewline) {
+      if l.hasPrefix("#") {
+        continue
+      }
+      let sl = String(l.trimmingCharacters(in: .whitespacesAndNewlines))
+      let privateKey = try newSecureEnclavePrivateKey(ageIdentity: sl, crypto: self.crypto)
+      recipients.append(privateKey.publicKey.ageRecipient(type: recipientType))
+    }
+    return recipients.joined(separator: "\n")
+  }
+
+  func runRecipientV1() {
+    var recipients: [String] = []
+    var identities: [String] = []
+    var fileKeys: [Data] = []
+
+    // Phase 1
+    loop: while true {
+      let stanza = try! Stanza.readFrom(stream: stream)
+      switch stanza.type {
+      case "add-recipient":
+        recipients.append(stanza.args[0])
+      case "add-identity":
+        identities.append(stanza.args[0])
+      case "wrap-file-key":
+        fileKeys.append(stanza.body)
+      case "done":
+        break loop
+      default:
+        continue
+      }
+    }
+
+    // Phase 2
+    var stanzas: [Stanza] = []
+    var errors: [Stanza] = []
+    var recipientKeys: [(P256.KeyAgreement.PublicKey, RecipientStanzaType)] = []
+    for (index, recipient) in recipients.enumerated() {
+      do {
+        recipientKeys.append(
+          (
+            (try P256.KeyAgreement.PublicKey(ageRecipient: recipient)),
+            recipient.starts(with: "age1p256tag1") ? .p256tag : .pivp256
+          ))
+      } catch {
+        errors.append(
+          Stanza(error: "recipient", args: [String(index)], message: error.localizedDescription))
+      }
+    }
+    for (index, identity) in identities.enumerated() {
+      do {
+        recipientKeys.append(
+          (
+            (try newSecureEnclavePrivateKey(ageIdentity: identity, crypto: crypto)).publicKey,
+            .pivp256
+          ))
+      } catch {
+        errors.append(
+          Stanza(error: "identity", args: [String(index)], message: error.localizedDescription))
+      }
+    }
+    for (index, fileKey) in fileKeys.enumerated() {
+      for (recipientKey, recipientStanzaType) in recipientKeys {
+        do {
+          let ephemeralSecretKey = self.crypto.newEphemeralPrivateKey()
+          let ephemeralPublicKeyBytes = ephemeralSecretKey.publicKey.compressedRepresentation
+          // CryptoKit PublicKeys can be the identity point by construction (see CryptoTests), but
+          // these keys can't be used in any operation. This is undocumented, but a documentation request
+          // has been filed as FB11989432.
+          // Swift Crypto PublicKeys cannot be the identity point by construction.
+          // Compresed representation cannot be the identity point anyway (?)
+          // Therefore, the shared secret cannot be all 0x00 bytes, so we don't need
+          // to explicitly check this here.
+          let sharedSecret = try ephemeralSecretKey.sharedSecretFromKeyAgreement(
+            with: recipientKey)
+          let sealedBox = try ChaChaPoly.seal(
+            fileKey,
+            using: recipientStanzaWrapKey(
+              using: sharedSecret,
+              salt: ephemeralPublicKeyBytes + recipientKey.compressedRepresentation,
+              type: recipientStanzaType
+            ), nonce: try! ChaChaPoly.Nonce(data: Data(count: 12)))
+          stanzas.append(
+            Stanza(
+              type: "recipient-stanza",
+              args: [
+                String(index),
+                recipientStanzaType.rawValue,
+                recipientStanzaType == .p256tag
+                  ? recipientKey.hmacTag(using: SymmetricKey(data: ephemeralPublicKeyBytes))
+                    .base64RawEncodedString : recipientKey.sha256Tag.base64RawEncodedString,
+                ephemeralPublicKeyBytes.base64RawEncodedString,
+              ], body: sealedBox.ciphertext + sealedBox.tag
+            )
+          )
+        } catch {
+          errors.append(
+            Stanza(error: "internal", args: [], message: error.localizedDescription))
+        }
+      }
+    }
+    for stanza in (errors.isEmpty ? stanzas : errors) {
+      stanza.writeTo(stream: stream)
+      let resp = try! Stanza.readFrom(stream: stream)
+      assert(resp.type == "ok")
+    }
+    Stanza(type: "done").writeTo(stream: stream)
+  }
+
+  func runIdentityV1() {
+    // Phase 1
+    var identities: [String] = []
+    var recipientStanzas: [Stanza] = []
+    loop: while true {
+      let stanza = try! Stanza.readFrom(stream: stream)
+      switch stanza.type {
+      case "add-identity":
+        identities.append(stanza.args[0])
+      case "recipient-stanza":
+        recipientStanzas.append(stanza)
+      case "done":
+        break loop
+      default:
+        continue
+      }
+    }
+
+    // Phase 2
+    var identityKeys: [SecureEnclavePrivateKey] = []
+    var errors: [Stanza] = []
+
+    // Construct identities
+    for (index, identity) in identities.enumerated() {
+      do {
+        identityKeys.append(
+          (try newSecureEnclavePrivateKey(ageIdentity: identity, crypto: crypto)))
+      } catch {
+        errors.append(
+          Stanza(error: "identity", args: [String(index)], message: error.localizedDescription))
+      }
+    }
+
+    var fileResponses: [Int: Stanza] = [:]
+    if errors.isEmpty {
+      // Check structural validity
+      for recipientStanza in recipientStanzas {
+        let fileIndex = Int(recipientStanza.args[0])!
+        switch recipientStanza.args[1] {
+        case "piv-p256", "p256tag":
+          if recipientStanza.args.count != 4 {
+            fileResponses[fileIndex] = Stanza(
+              error: "stanza", args: [String(fileIndex)], message: "incorrect argument count")
+            continue
+          }
+          let tag = Data(base64RawEncoded: recipientStanza.args[2])
+          if tag == nil || tag!.count != 4 {
+            fileResponses[fileIndex] = Stanza(
+              error: "stanza", args: [String(fileIndex)], message: "invalid tag")
+            continue
+          }
+          let share = Data(base64RawEncoded: recipientStanza.args[3])
+          if share == nil || share!.count != 33 {
+            fileResponses[fileIndex] = Stanza(
+              error: "stanza", args: [String(fileIndex)], message: "invalid share")
+            continue
+          }
+          if recipientStanza.body.count != 32 {
+            fileResponses[fileIndex] = Stanza(
+              error: "stanza", args: [String(fileIndex)],
+              message: "invalid body")
+            continue
+          }
+
+        default:
+          continue
+        }
+      }
+
+      // Unwrap keys
+      for recipientStanza in recipientStanzas {
+        let fileIndex = Int(recipientStanza.args[0])!
+        if fileResponses[fileIndex] != nil {
+          continue
+        }
+        guard let type = RecipientStanzaType(rawValue: recipientStanza.args[1]) else {
+          continue
+        }
+        let tag = recipientStanza.args[2]
+        let share = recipientStanza.args[3]
+        for identity in identityKeys {
+          do {
+            let shareKeyData = Data(base64RawEncoded: share)!
+            let identityTag =
+              type == .p256tag
+              ? identity.publicKey.hmacTag(using: SymmetricKey(data: shareKeyData))
+                .base64RawEncodedString : identity.publicKey.sha256Tag.base64RawEncodedString
+            if identityTag != tag {
+              continue
+            }
+
+            let shareKey: P256.KeyAgreement.PublicKey = try P256.KeyAgreement.PublicKey(
+              compressedRepresentation: shareKeyData)
+            // CryptoKit PublicKeys can be the identity point by construction (see CryptoTests), but
+            // these keys can't be used in any operation. This is undocumented, but a documentation request
+            // has been filed as FB11989432.
+            // Swift Crypto PublicKeys cannot be the identity point by construction.
+            // Compresed representation cannot be the identity point anyway (?)
+            // Therefore, the shared secret cannot be all 0x00 bytes, so we don't need
+            // to explicitly check this here.
+            let sharedSecret: SharedSecret = try identity.sharedSecretFromKeyAgreement(
+              with: shareKey)
+            let unwrappedKey = try ChaChaPoly.open(
+              ChaChaPoly.SealedBox(
+                combined: try! ChaChaPoly.Nonce(data: Data(count: 12)) + recipientStanza.body),
+              using: recipientStanzaWrapKey(
+                using: sharedSecret,
+                salt: shareKey.compressedRepresentation
+                  + identity.publicKey.compressedRepresentation,
+                type: type
+              ))
+            fileResponses[fileIndex] = Stanza(
+              type: "file-key",
+              args: [String(fileIndex)],
+              body: unwrappedKey
+            )
+          } catch {
+            Stanza(type: "msg", body: Data(error.localizedDescription.utf8)).writeTo(
+              stream: stream)
+            let resp = try! Stanza.readFrom(stream: self.stream)
+            assert(resp.type == "ok")
+            // continue
+          }
+        }
+      }
+    }
+
+    let responses = fileResponses.keys.sorted().map({ k in fileResponses[k]! })
+    for stanza in (errors.isEmpty ? responses : errors) {
+      stanza.writeTo(stream: stream)
+      let resp = try! Stanza.readFrom(stream: stream)
+      assert(resp.type == "ok")
+    }
+    Stanza(type: "done").writeTo(stream: stream)
+  }
+
+  enum Error: LocalizedError, Equatable {
+    case seUnsupported
+    case incompleteStanza
+    case invalidStanza
+    case unknownHRP(String)
+
+    public var errorDescription: String? {
+      switch self {
+      case .seUnsupported: return "Secure Enclave not supported on this device"
+      case .incompleteStanza: return "incomplete stanza"
+      case .invalidStanza: return "invalid stanza"
+      case .unknownHRP(let hrp): return "unknown HRP: \(hrp)"
+      }
+    }
+  }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
+
+struct Stanza: Equatable {
+  var type: String
+  var args: [String] = []
+  var body = Data()
+
+  static func readFrom(stream: Stream) throws -> Stanza {
+    guard let header = stream.readLine() else {
+      throw Plugin.Error.incompleteStanza
+    }
+    let headerParts = header.components(separatedBy: " ")
+    if headerParts.count < 2 {
+      throw Plugin.Error.invalidStanza
+    }
+    if headerParts[0] != "->" {
+      throw Plugin.Error.invalidStanza
+    }
+    var body = Data()
+    while true {
+      guard let line = stream.readLine() else {
+        throw Plugin.Error.incompleteStanza
+      }
+      guard let lineData = Data(base64RawEncoded: line) else {
+        throw Plugin.Error.invalidStanza
+      }
+      if lineData.count > 48 {
+        throw Plugin.Error.invalidStanza
+      }
+      body.append(lineData)
+      if lineData.count < 48 {
+        break
+      }
+    }
+    return Stanza(type: headerParts[1], args: Array(headerParts[2...]), body: body)
+  }
+
+  func writeTo(stream: Stream) {
+    let parts = ([type] + args).joined(separator: " ")
+    stream.writeLine("-> \(parts)\n\(body.base64RawEncodedString)")
+  }
+}
+
+extension Stanza {
+  init(error type: String, args: [String] = [], message: String) {
+    self.type = "error"
+    self.args = [type] + args
+    self.body = Data(message.utf8)
+  }
+}
+
+enum KeyAccessControl {
+  case none
+  case passcode
+  case anyBiometry
+  case anyBiometryOrPasscode
+  case anyBiometryAndPasscode
+  case currentBiometry
+  case currentBiometryAndPasscode
+}
+
+enum RecipientType: String {
+  case se = "se"
+  case p256tag = "p256tag"
+}
+
+enum RecipientStanzaType: String {
+  case p256tag = "p256tag"
+  case pivp256 = "piv-p256"
+}
+
+func recipientStanzaWrapKey(
+  using sharedSecret: SharedSecret, salt: Data, type: RecipientStanzaType
+) -> SymmetricKey {
+  switch type {
+  case .p256tag:
+    return sharedSecret.hkdfDerivedSymmetricKey(
+      using: SHA256.self,
+      salt: Data("age-encryption.org/v1/p256tag".utf8),
+      sharedInfo: salt,
+      outputByteCount: 32
+    )
+  case .pivp256:
+    return sharedSecret.hkdfDerivedSymmetricKey(
+      using: SHA256.self, salt: salt,
+      sharedInfo: Data("piv-p256".utf8),
+      outputByteCount: 32
+    )
+  }
+}
+
+extension P256.KeyAgreement.PublicKey {
+  init(ageRecipient: String) throws {
+    let id = try Bech32().decode(ageRecipient)
+    if id.hrp != "age1se" && id.hrp != "age1p256tag" {
+      throw Plugin.Error.unknownHRP(id.hrp)
+    }
+    self = try P256.KeyAgreement.PublicKey(compressedRepresentation: id.data)
+  }
+
+  var sha256Tag: Data {
+    return Data(SHA256.hash(data: compressedRepresentation).prefix(4))
+  }
+
+  func hmacTag(using: SymmetricKey) -> Data {
+    return Data(
+      HMAC<SHA256>.authenticationCode(for: compressedRepresentation, using: using).prefix(4))
+  }
+
+  func ageRecipient(type: RecipientType) -> String {
+    return Bech32().encode(hrp: "age1\(type.rawValue)", data: self.compressedRepresentation)
+  }
+}
+
+extension SecureEnclavePrivateKey {
+  var ageIdentity: String {
+    return Bech32().encode(
+      hrp: "AGE-PLUGIN-SE-",
+      data: self.dataRepresentation)
+  }
+}
+
+func newSecureEnclavePrivateKey(ageIdentity: String, crypto: Crypto) throws
+  -> SecureEnclavePrivateKey
+{
+  let id = try Bech32().decode(ageIdentity)
+  if id.hrp != "AGE-PLUGIN-SE-" {
+    throw Plugin.Error.unknownHRP(id.hrp)
+  }
+  return try crypto.newSecureEnclavePrivateKey(dataRepresentation: id.data)
+}
+</file>
+
+<file path="Sources/Stream.swift">
+import Foundation
+
+/// Abstraction of a line-based communication stream
+protocol Stream {
+  func readLine() -> String?
+  func writeLine(_: String)
+}
+
+class StandardIOStream: Stream {
+  func readLine() -> String? {
+    return Swift.readLine(strippingNewline: true)
+  }
+
+  func writeLine(_ line: String) {
+    FileHandle.standardOutput.write(Data(line.utf8))
+    FileHandle.standardOutput.write(Data([0xa]))
+    fflush(stdout)
+  }
+}
+</file>
+
+<file path="Tests/Base64Tests.swift">
+import XCTest
+
+@testable import age_plugin_se
+
+final class Base64Tests: XCTestCase {
+  func testDataInitBase64RawEncoded_NeedsNoPad() throws {
+    XCTAssertEqual(
+      Data([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
+      Data(base64RawEncoded: "AQIDBAUG"))
+  }
+
+  func testDataInitBase64RawEncoded_Needs1Pad() throws {
+    XCTAssertEqual(
+      Data([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),
+      Data(base64RawEncoded: "AQIDBAUGBwg"))
+  }
+
+  func testDataInitBase64RawEncoded_Needs2Pads() throws {
+    XCTAssertEqual(
+      Data([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+      Data(base64RawEncoded: "AQIDBAUGBw"))
+  }
+
+  func testDataInitBase64RawEncoded_HasPad() throws {
+    XCTAssertEqual(
+      nil,
+      Data(base64RawEncoded: "AQIDBAUGBwg="))
+  }
+
+  func testDataInit_InvalidBase64() throws {
+    XCTAssertEqual(
+      nil,
+      Data(base64RawEncoded: "A_QIDBAUG"))
+  }
+
+  func testDataBase64RawEncodedData() throws {
+    XCTAssertEqual(
+      Data("AQIDBAUGBw".utf8),
+      Data([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]).base64RawEncodedData)
+  }
+
+  func testDataBase64RawEncodedData_Long() throws {
+    XCTAssertEqual(
+      Data(
+        """
+        TG9yZW0gaXBzdW0gZG9sb3Igc2l0IGFtZXQsIGNvbnNlY3RldHVyIGFkaXBpc2Np
+        bmcgZWxpdCwgc2VkIGRvIGVpdXNtb2QgdGVtcG9yIGluY2lkaWR1bnQgdXQgbGFi
+        b3JlIGV0IGRvbG9yZSBtYWduYSBhbGlxdWEuIFV0IGVuaW0gYWQgbWluaW0gdmVu
+        aWFtLCBxdWlzIG5vc3RydWQgZXhlcmNpdGF0aW9uIHVsbGFtY28gbGFib3JpcyBu
+        aXNpIHV0IGFsaXF1aXAgZXggZWEgY29tbW9kbyBjb25zZXF1YXQuIER1aXMgYXV0
+        ZSBpcnVyZSBkb2xvciBpbiByZXByZWhlbmRlcml0IGluIHZvbHVwdGF0ZSB2ZWxp
+        dCBlc3NlIGNpbGx1bSBkb2xvcmUgZXUgZnVnaWF0IG51bGxhIHBhcmlhdHVyLiBF
+        eGNlcHRldXIgc2ludCBvY2NhZWNhdCBjdXBpZGF0YXQgbm9uIHByb2lkZW50LCBz
+        dW50IGluIGN1bHBhIHF1aSBvZmZpY2lhIGRlc2VydW50IG1vbGxpdCBhbmltIGlk
+        IGVzdCBsYWJvcnVtLg
+        """.utf8),
+      Data(
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+          .utf8
+      )
+      .base64RawEncodedData)
+  }
+
+  func testDataBase64RawEncodedString_Long() throws {
+    XCTAssertEqual(
+      """
+      TG9yZW0gaXBzdW0gZG9sb3Igc2l0IGFtZXQsIGNvbnNlY3RldHVyIGFkaXBpc2Np
+      bmcgZWxpdCwgc2VkIGRvIGVpdXNtb2QgdGVtcG9yIGluY2lkaWR1bnQgdXQgbGFi
+      b3JlIGV0IGRvbG9yZSBtYWduYSBhbGlxdWEuIFV0IGVuaW0gYWQgbWluaW0gdmVu
+      aWFtLCBxdWlzIG5vc3RydWQgZXhlcmNpdGF0aW9uIHVsbGFtY28gbGFib3JpcyBu
+      aXNpIHV0IGFsaXF1aXAgZXggZWEgY29tbW9kbyBjb25zZXF1YXQuIER1aXMgYXV0
+      ZSBpcnVyZSBkb2xvciBpbiByZXByZWhlbmRlcml0IGluIHZvbHVwdGF0ZSB2ZWxp
+      dCBlc3NlIGNpbGx1bSBkb2xvcmUgZXUgZnVnaWF0IG51bGxhIHBhcmlhdHVyLiBF
+      eGNlcHRldXIgc2ludCBvY2NhZWNhdCBjdXBpZGF0YXQgbm9uIHByb2lkZW50LCBz
+      dW50IGluIGN1bHBhIHF1aSBvZmZpY2lhIGRlc2VydW50IG1vbGxpdCBhbmltIGlk
+      IGVzdCBsYWJvcnVtLg
+      """,
+      Data(
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+          .utf8
+      )
+      .base64RawEncodedString)
+  }
+}
+</file>
+
+<file path="Tests/Bech32Tests.swift">
+import XCTest
+
+@testable import age_plugin_se
+
+final class Bech32Tests: XCTestCase {
+  func testEncode() throws {
+    XCTAssertEqual(
+      "age1se1qv9p3zge0tmqxczme5pn3p7g3x80t0uxvlk30s9vevjq0lxuy8rzss09jyq",
+      Bech32().encode(
+        hrp: "age1se",
+        data: Data([
+          0x03, 0x0a, 0x18, 0x89, 0x19, 0x7a, 0xf6, 0x03, 0x60, 0x5b, 0xcd, 0x03, 0x38, 0x87, 0xc8,
+          0x89, 0x8e, 0xf5, 0xbf, 0x86, 0x67, 0xed, 0x17, 0xc0, 0xac, 0xcb, 0x24, 0x07, 0xfc, 0xdc,
+          0x21, 0xc6, 0x28,
+        ])))
+  }
+
+  func testEncode_LongUppercase() throws {
+    XCTAssertEqual(
+      "AGE-PLUGIN-SE-1QJPQZ7P3SGQHGVYP75XQYUNTXXQ7UVQTPSPKY6TYQSZDNVLMZYCYSRQRWP6KYPZPQNV20QEQRP3CLMWQALZ8V6TFESK6VDUL30F0D7TC2EXE2RV3Z2TQ5L0ZQFLHJMLY64XS8ESX6KFTL43MN86QVA0W982DTFWL4XMRT7CGXQYQCQMJDDHSYQGQXQRSCQNTWSPQZPPS9CXQYAMTQS5W4LASFLR432Z3658D86JEL8MKGE9XTJLHK4P3ASKWWZ8W6G7RWVLQYSWECSL8XF4RQPCVQF3XXQSPPYCQWRQZDDMQYQGZXQTSCQMTD9JQGYRALY9FHQYLGFET999CZUFGPGLJXQNSCQMJDDKSGGXE56G2EH3Y5V0QPUM8VHADV3FS2TKDR4F2M8266Y444ZFF3FW0VCC85RQZV4JRZAPSWGXQXCTRDSCKKVPFPSPK7CMTXY3RQGQVQD3HQMCVR9ZX2ANFVDJ57AMWV4EYZAT5DPJKUARFVDSHG6T0DCCQJRQYDAJX2MQPQYQNQ2SVQ3HHXEMWXY3RQGQVQD3HQMCVR9ZX2ANFVDJ57AMWV4EYZAT5DPJKUARFVDSHG6T0DCCQWRQZDASSZQGPK9FKDS",
+      Bech32().encode(
+        hrp: "AGE-PLUGIN-SE-",
+        data: Data([
+          0x04, 0x82, 0x01, 0x78, 0x31, 0x82, 0x01, 0x74, 0x30, 0x81, 0xf5, 0x0c, 0x02, 0x72, 0x6b,
+          0x31, 0x81, 0xee, 0x30, 0x0b, 0x0c, 0x03, 0x62, 0x69, 0x64, 0x04, 0x04, 0xd9, 0xb3, 0xfb,
+          0x11, 0x30, 0x48, 0x0c, 0x03, 0x70, 0x75, 0x62, 0x04, 0x41, 0x04, 0xd8, 0xa7, 0x83, 0x20,
+          0x18, 0x63, 0x8f, 0xed, 0xc0, 0xef, 0xc4, 0x76, 0x69, 0x69, 0xcc, 0x2d, 0xa6, 0x37, 0x9f,
+          0x8b, 0xd2, 0xf6, 0xf9, 0x78, 0x56, 0x4d, 0x95, 0x0d, 0x91, 0x12, 0x96, 0x0a, 0x7d, 0xe2,
+          0x02, 0x7f, 0x79, 0x6f, 0xe4, 0xd5, 0x4d, 0x03, 0xe6, 0x06, 0xd5, 0x92, 0xbf, 0xd6, 0x3b,
+          0x99, 0xf4, 0x06, 0x75, 0xee, 0x29, 0xd4, 0xd5, 0xa5, 0xdf, 0xa9, 0xb6, 0x35, 0xfb, 0x08,
+          0x30, 0x08, 0x0c, 0x03, 0x72, 0x6b, 0x6f, 0x02, 0x01, 0x00, 0x30, 0x07, 0x0c, 0x02, 0x6b,
+          0x74, 0x02, 0x01, 0x04, 0x30, 0x2e, 0x0c, 0x02, 0x77, 0x6b, 0x04, 0x28, 0xea, 0xff, 0xb0,
+          0x4f, 0xc7, 0x58, 0xa8, 0x51, 0xd5, 0x0e, 0xd3, 0xea, 0x59, 0xf9, 0xf7, 0x64, 0x64, 0xa6,
+          0x5c, 0xbf, 0x7b, 0x54, 0x31, 0xec, 0x2c, 0xe7, 0x08, 0xee, 0xd2, 0x3c, 0x37, 0x33, 0xe0,
+          0x24, 0x1d, 0x9c, 0x43, 0xe7, 0x32, 0x6a, 0x30, 0x07, 0x0c, 0x02, 0x62, 0x63, 0x02, 0x01,
+          0x09, 0x30, 0x07, 0x0c, 0x02, 0x6b, 0x76, 0x02, 0x01, 0x02, 0x30, 0x17, 0x0c, 0x03, 0x6b,
+          0x69, 0x64, 0x04, 0x10, 0x7d, 0xf9, 0x0a, 0x9b, 0x80, 0x9f, 0x42, 0x72, 0xb2, 0x94, 0xb8,
+          0x17, 0x12, 0x80, 0xa3, 0xf2, 0x30, 0x27, 0x0c, 0x03, 0x72, 0x6b, 0x6d, 0x04, 0x20, 0xd9,
+          0xa6, 0x90, 0xac, 0xde, 0x24, 0xa3, 0x1e, 0x00, 0xf3, 0x67, 0x65, 0xfa, 0xd6, 0x45, 0x30,
+          0x52, 0xec, 0xd1, 0xd5, 0x2a, 0xd9, 0xd5, 0xad, 0x12, 0xb5, 0xa8, 0x92, 0x98, 0xa5, 0xcf,
+          0x66, 0x30, 0x7a, 0x0c, 0x02, 0x65, 0x64, 0x31, 0x74, 0x30, 0x72, 0x0c, 0x03, 0x61, 0x63,
+          0x6c, 0x31, 0x6b, 0x30, 0x29, 0x0c, 0x03, 0x6f, 0x63, 0x6b, 0x31, 0x22, 0x30, 0x20, 0x0c,
+          0x03, 0x63, 0x70, 0x6f, 0x0c, 0x19, 0x44, 0x65, 0x76, 0x69, 0x63, 0x65, 0x4f, 0x77, 0x6e,
+          0x65, 0x72, 0x41, 0x75, 0x74, 0x68, 0x65, 0x6e, 0x74, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f,
+          0x6e, 0x30, 0x09, 0x0c, 0x04, 0x6f, 0x64, 0x65, 0x6c, 0x01, 0x01, 0x01, 0x30, 0x2a, 0x0c,
+          0x04, 0x6f, 0x73, 0x67, 0x6e, 0x31, 0x22, 0x30, 0x20, 0x0c, 0x03, 0x63, 0x70, 0x6f, 0x0c,
+          0x19, 0x44, 0x65, 0x76, 0x69, 0x63, 0x65, 0x4f, 0x77, 0x6e, 0x65, 0x72, 0x41, 0x75, 0x74,
+          0x68, 0x65, 0x6e, 0x74, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x30, 0x07, 0x0c, 0x02,
+          0x6f, 0x61, 0x01, 0x01, 0x01,
+        ])))
+  }
+
+  func testDecode() throws {
+    let result = try Bech32().decode(
+      "age1se1qv9p3zge0tmqxczme5pn3p7g3x80t0uxvlk30s9vevjq0lxuy8rzss09jyq")
+    XCTAssertEqual(
+      "age1se", result.hrp)
+    XCTAssertEqual(
+      Data([
+        0x03, 0x0a, 0x18, 0x89, 0x19, 0x7a, 0xf6, 0x03, 0x60, 0x5b, 0xcd, 0x03, 0x38, 0x87, 0xc8,
+        0x89, 0x8e, 0xf5, 0xbf, 0x86, 0x67, 0xed, 0x17, 0xc0, 0xac, 0xcb, 0x24, 0x07, 0xfc, 0xdc,
+        0x21, 0xc6, 0x28,
+      ]), result.data)
+  }
+
+  func testDecode_LongUppercase() throws {
+    let result = try Bech32().decode(
+      "AGE-PLUGIN-SE-1QJPQZ7P3SGQHGVYP75XQYUNTXXQ7UVQTPSPKY6TYQSZDNVLMZYCYSRQRWP6KYPZPQNV20QEQRP3CLMWQALZ8V6TFESK6VDUL30F0D7TC2EXE2RV3Z2TQ5L0ZQFLHJMLY64XS8ESX6KFTL43MN86QVA0W982DTFWL4XMRT7CGXQYQCQMJDDHSYQGQXQRSCQNTWSPQZPPS9CXQYAMTQS5W4LASFLR432Z3658D86JEL8MKGE9XTJLHK4P3ASKWWZ8W6G7RWVLQYSWECSL8XF4RQPCVQF3XXQSPPYCQWRQZDDMQYQGZXQTSCQMTD9JQGYRALY9FHQYLGFET999CZUFGPGLJXQNSCQMJDDKSGGXE56G2EH3Y5V0QPUM8VHADV3FS2TKDR4F2M8266Y444ZFF3FW0VCC85RQZV4JRZAPSWGXQXCTRDSCKKVPFPSPK7CMTXY3RQGQVQD3HQMCVR9ZX2ANFVDJ57AMWV4EYZAT5DPJKUARFVDSHG6T0DCCQJRQYDAJX2MQPQYQNQ2SVQ3HHXEMWXY3RQGQVQD3HQMCVR9ZX2ANFVDJ57AMWV4EYZAT5DPJKUARFVDSHG6T0DCCQWRQZDASSZQGPK9FKDS"
+    )
+    XCTAssertEqual(
+      "AGE-PLUGIN-SE-", result.hrp)
+    // print(result.data.map { String(format: "0x%02x", $0) }.joined(separator: ", "))
+    XCTAssertEqual(
+      Data([
+        0x04, 0x82, 0x01, 0x78, 0x31, 0x82, 0x01, 0x74, 0x30, 0x81, 0xf5, 0x0c, 0x02, 0x72, 0x6b,
+        0x31, 0x81, 0xee, 0x30, 0x0b, 0x0c, 0x03, 0x62, 0x69, 0x64, 0x04, 0x04, 0xd9, 0xb3, 0xfb,
+        0x11, 0x30, 0x48, 0x0c, 0x03, 0x70, 0x75, 0x62, 0x04, 0x41, 0x04, 0xd8, 0xa7, 0x83, 0x20,
+        0x18, 0x63, 0x8f, 0xed, 0xc0, 0xef, 0xc4, 0x76, 0x69, 0x69, 0xcc, 0x2d, 0xa6, 0x37, 0x9f,
+        0x8b, 0xd2, 0xf6, 0xf9, 0x78, 0x56, 0x4d, 0x95, 0x0d, 0x91, 0x12, 0x96, 0x0a, 0x7d, 0xe2,
+        0x02, 0x7f, 0x79, 0x6f, 0xe4, 0xd5, 0x4d, 0x03, 0xe6, 0x06, 0xd5, 0x92, 0xbf, 0xd6, 0x3b,
+        0x99, 0xf4, 0x06, 0x75, 0xee, 0x29, 0xd4, 0xd5, 0xa5, 0xdf, 0xa9, 0xb6, 0x35, 0xfb, 0x08,
+        0x30, 0x08, 0x0c, 0x03, 0x72, 0x6b, 0x6f, 0x02, 0x01, 0x00, 0x30, 0x07, 0x0c, 0x02, 0x6b,
+        0x74, 0x02, 0x01, 0x04, 0x30, 0x2e, 0x0c, 0x02, 0x77, 0x6b, 0x04, 0x28, 0xea, 0xff, 0xb0,
+        0x4f, 0xc7, 0x58, 0xa8, 0x51, 0xd5, 0x0e, 0xd3, 0xea, 0x59, 0xf9, 0xf7, 0x64, 0x64, 0xa6,
+        0x5c, 0xbf, 0x7b, 0x54, 0x31, 0xec, 0x2c, 0xe7, 0x08, 0xee, 0xd2, 0x3c, 0x37, 0x33, 0xe0,
+        0x24, 0x1d, 0x9c, 0x43, 0xe7, 0x32, 0x6a, 0x30, 0x07, 0x0c, 0x02, 0x62, 0x63, 0x02, 0x01,
+        0x09, 0x30, 0x07, 0x0c, 0x02, 0x6b, 0x76, 0x02, 0x01, 0x02, 0x30, 0x17, 0x0c, 0x03, 0x6b,
+        0x69, 0x64, 0x04, 0x10, 0x7d, 0xf9, 0x0a, 0x9b, 0x80, 0x9f, 0x42, 0x72, 0xb2, 0x94, 0xb8,
+        0x17, 0x12, 0x80, 0xa3, 0xf2, 0x30, 0x27, 0x0c, 0x03, 0x72, 0x6b, 0x6d, 0x04, 0x20, 0xd9,
+        0xa6, 0x90, 0xac, 0xde, 0x24, 0xa3, 0x1e, 0x00, 0xf3, 0x67, 0x65, 0xfa, 0xd6, 0x45, 0x30,
+        0x52, 0xec, 0xd1, 0xd5, 0x2a, 0xd9, 0xd5, 0xad, 0x12, 0xb5, 0xa8, 0x92, 0x98, 0xa5, 0xcf,
+        0x66, 0x30, 0x7a, 0x0c, 0x02, 0x65, 0x64, 0x31, 0x74, 0x30, 0x72, 0x0c, 0x03, 0x61, 0x63,
+        0x6c, 0x31, 0x6b, 0x30, 0x29, 0x0c, 0x03, 0x6f, 0x63, 0x6b, 0x31, 0x22, 0x30, 0x20, 0x0c,
+        0x03, 0x63, 0x70, 0x6f, 0x0c, 0x19, 0x44, 0x65, 0x76, 0x69, 0x63, 0x65, 0x4f, 0x77, 0x6e,
+        0x65, 0x72, 0x41, 0x75, 0x74, 0x68, 0x65, 0x6e, 0x74, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f,
+        0x6e, 0x30, 0x09, 0x0c, 0x04, 0x6f, 0x64, 0x65, 0x6c, 0x01, 0x01, 0x01, 0x30, 0x2a, 0x0c,
+        0x04, 0x6f, 0x73, 0x67, 0x6e, 0x31, 0x22, 0x30, 0x20, 0x0c, 0x03, 0x63, 0x70, 0x6f, 0x0c,
+        0x19, 0x44, 0x65, 0x76, 0x69, 0x63, 0x65, 0x4f, 0x77, 0x6e, 0x65, 0x72, 0x41, 0x75, 0x74,
+        0x68, 0x65, 0x6e, 0x74, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x30, 0x07, 0x0c, 0x02,
+        0x6f, 0x61, 0x01, 0x01, 0x01,
+      ]), result.data)
+  }
+}
+</file>
+
+<file path="Tests/CLITests.swift">
+import XCTest
+
+@testable import age_plugin_se
+
+final class OptionsTests: XCTestCase {
+  func testParse_NoArguments() throws {
+    let options = try Options.parse(["_"])
+    XCTAssertEqual(.help, options.command)
+  }
+
+  func testParse_CommandWithHelp() throws {
+    let options = try Options.parse(["_", "keygen", "--help"])
+    XCTAssertEqual(.help, options.command)
+  }
+
+  func testParse_CommandWithVersion() throws {
+    let options = try Options.parse(["_", "keygen", "--version"])
+    XCTAssertEqual(.version, options.command)
+  }
+
+  func testParse_Keygen() throws {
+    let options = try Options.parse(["_", "keygen", "--access-control=any-biometry"])
+    XCTAssertEqual(.keygen, options.command)
+    XCTAssertEqual(.anyBiometry, options.accessControl)
+  }
+
+  func testParse_KeyGen_InvalidAccessControl() throws {
+    XCTAssertThrowsError(try Options.parse(["_", "keygen", "--access-control=unknown"])) { error in
+      XCTAssertEqual(
+        Options.Error.invalidValue("--access-control", "unknown"), error as! Options.Error)
+    }
+  }
+
+  func testParse_Recipients() throws {
+    let options = try Options.parse([
+      "_", "recipients", "--output=recipients.txt", "--input=identity.txt",
+    ])
+    XCTAssertEqual(.recipients, options.command)
+    XCTAssertEqual(.se, options.recipientType)
+    XCTAssertEqual("identity.txt", options.input)
+    XCTAssertEqual("recipients.txt", options.output)
+  }
+
+  func testParse_Recipients_P256TagRecipientType() throws {
+    let options = try Options.parse([
+      "_", "recipients", "--recipient-type=p256tag", "--output=recipients.txt",
+      "--input=identity.txt",
+    ])
+    XCTAssertEqual(.recipients, options.command)
+    XCTAssertEqual(.p256tag, options.recipientType)
+    XCTAssertEqual("identity.txt", options.input)
+    XCTAssertEqual("recipients.txt", options.output)
+  }
+
+  func testParse_Recipients_SERecipientType() throws {
+    let options = try Options.parse([
+      "_", "recipients", "--recipient-type=se", "--output=recipients.txt", "--input=identity.txt",
+    ])
+    XCTAssertEqual(.recipients, options.command)
+    XCTAssertEqual(.se, options.recipientType)
+    XCTAssertEqual("identity.txt", options.input)
+    XCTAssertEqual("recipients.txt", options.output)
+  }
+
+  func testParse_Recipients_InvalidRecipientType() throws {
+    XCTAssertThrowsError(
+      try Options.parse([
+        "_", "recipients", "--recipient-type=invalid", "--output=recipients.txt",
+        "--input=identity.txt",
+      ])
+    ) { error in
+      XCTAssertEqual(
+        Options.Error.invalidValue("--recipient-type", "invalid"), error as! Options.Error)
+    }
+  }
+
+  func testParse_Recipients_NoOptions() throws {
+    let options = try Options.parse(["_", "recipients"])
+    XCTAssertEqual(.recipients, options.command)
+    XCTAssertEqual(nil, options.input)
+    XCTAssertEqual(nil, options.output)
+  }
+
+  func testParse_AgePlugin() throws {
+    let options = try Options.parse(["_", "--age-plugin=identity-v1"])
+    XCTAssertEqual(.plugin(.identityV1), options.command)
+  }
+
+  func testParse_AgePlugin_InvalidPlugin() throws {
+    XCTAssertThrowsError(try Options.parse(["_", "--age-plugin=unknown-v1"])) { error in
+      XCTAssertEqual(
+        Options.Error.invalidValue("--age-plugin", "unknown-v1"), error as! Options.Error)
+    }
+  }
+
+  func testParse_LongOptionWithEqual() throws {
+    let options = try Options.parse(["_", "keygen", "--output=foo.txt"])
+    XCTAssertEqual(.keygen, options.command)
+    XCTAssertEqual("foo.txt", options.output)
+  }
+
+  func testParse_LongOptionWithoutEqual() throws {
+    let options = try Options.parse(["_", "keygen", "--output", "foo.txt"])
+    XCTAssertEqual(.keygen, options.command)
+    XCTAssertEqual("foo.txt", options.output)
+  }
+
+  func testParse_LongOptionWithoutValue() throws {
+    XCTAssertThrowsError(try Options.parse(["_", "keygen", "--output"])) { error in
+      XCTAssertEqual(Options.Error.missingValue("--output"), error as! Options.Error)
+    }
+  }
+}
+</file>
+
+<file path="Tests/CryptoTests.swift">
+import XCTest
+
+@testable import age_plugin_se
+
+#if !os(Linux) && !os(Windows)
+  import CryptoKit
+#else
+  import Crypto
+#endif
+
+final class CryptoKitCryptoTests: XCTestCase {
+  var crypto = CryptoKitCrypto()
+
+  func testNewEphemeralPrivateKey() throws {
+    let k1 = crypto.newEphemeralPrivateKey()
+    let k2 = crypto.newEphemeralPrivateKey()
+
+    XCTAssertNotEqual(k1.rawRepresentation, k2.rawRepresentation)
+    XCTAssertNotEqual(k1.publicKey.rawRepresentation, k2.publicKey.rawRepresentation)
+  }
+
+  func testNewEphemeralPrivateKey_DifferentCrypto() throws {
+    let k1 = CryptoKitCrypto().newEphemeralPrivateKey()
+    let k2 = CryptoKitCrypto().newEphemeralPrivateKey()
+
+    XCTAssertNotEqual(k1.rawRepresentation, k2.rawRepresentation)
+    XCTAssertNotEqual(k1.publicKey.rawRepresentation, k2.publicKey.rawRepresentation)
+  }
+
+  // A test to validate that CryptoKit / Swift Crypto cannot do any operations with points at infinity
+  func testPointAtInfinity() throws {
+    let sk = P256.KeyAgreement.PrivateKey()
+
+    // base64.b64encode(ECC.generate(curve="p256").export_key(format="DER"))
+    let pk = try P256.KeyAgreement.PublicKey(
+      derRepresentation: Data(
+        base64Encoded:
+          "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE0Zl262mVCr+1pi9396tEdXC0HIQnENUkWal3nOzLWvX+TYja1xVE++6WzRvunrkBT91380BIJZvB7ZiiEN+Y1A=="
+      )!)
+
+    // Test that operations work from a regular DER constructed key
+    let _ = try sk.sharedSecretFromKeyAgreement(with: pk)
+
+    func run() throws {
+      // base64.b64encode(ECC.EccKey(curve = "p256", point = ECC.generate(curve="p256").pointQ.point_at_infinity()).export_key(format="DER"))
+      // Swift Crypto throws at construction time
+      let identityPK = try P256.KeyAgreement.PublicKey(
+        derRepresentation: Data(
+          base64Encoded:
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+        )!)
+
+      // CryptoKit throws at operation time
+      let _ = try sk.sharedSecretFromKeyAgreement(with: identityPK)
+    }
+
+    XCTAssertThrowsError(try run())
+  }
+}
+
+final class DummyCryptoTests: XCTestCase {
+  var crypto = DummyCrypto()
+
+  func testNewEphemeralPrivateKey() throws {
+    let k1 = crypto.newEphemeralPrivateKey()
+    let k2 = crypto.newEphemeralPrivateKey()
+
+    XCTAssertNotEqual(k1.rawRepresentation, k2.rawRepresentation)
+    XCTAssertNotEqual(k1.publicKey.rawRepresentation, k2.publicKey.rawRepresentation)
+  }
+
+  func testNewEphemeralPrivateKey_DifferentCrypto() throws {
+    let k1 = DummyCrypto().newEphemeralPrivateKey()
+    let k2 = DummyCrypto().newEphemeralPrivateKey()
+
+    XCTAssertEqual(k1.rawRepresentation, k2.rawRepresentation)
+    XCTAssertEqual(k1.publicKey.rawRepresentation, k2.publicKey.rawRepresentation)
+  }
+}
+</file>
+
+<file path="Tests/DummyCrypto.swift">
+import Foundation
+
+@testable import age_plugin_se
+
+#if !os(Linux) && !os(Windows)
+  import CryptoKit
+#else
+  import Crypto
+#endif
+
+class DummyCrypto: Crypto {
+  // If more keys are needed, add them to the front
+  var dummyKeys = [
+    "t8Y0uUHLtBvCtuUz0Hdw2lqbwZf6TgYzYKFWMEEFSs8",
+    "HxEmObcQ6bcAUC8w6kPWrnlUIwBQoi66ZNpQZ0cAXww",
+    "dCDteyAKpkwYd8jCunOz0mvWmy+24zvWV41YBD+Pkeg",
+    "NkkLXSZ+yhx9imKKw9cOsbey4C1XZAPuSDMCgTLENrY",
+    "bQrp04tXb+diJ6x28Kd8EDt9sCmI5diS36Zy3n49DHg",
+    "m8/qMMkYDelvL+ihdUFYyKXBn+7We21fZ5zH/I61y3M",
+    "lQq/Pq0GA2QFGTEiNMQIxZHzBnt+nPRXK5gL3X6nnJY",
+    "VoUn+n/vzkuDzWgMV9n3e1L+tTSIl0Sg7lXSNDR5XqY",
+    "3naom0zZxBZcSZCfoNzyjLVmG6hyRKX8bCU3wukusFI",
+    "N2WRutxd1Ed0l4piqArI2gKYSTG7peE8BYBrLLV7YjQ",
+  ].map { Data(base64RawEncoded: $0)! }
+
+  var isSecureEnclaveAvailable = true
+  var failingOperations = false
+
+  func newSecureEnclavePrivateKey(dataRepresentation: Data) throws -> SecureEnclavePrivateKey {
+    return DummySecureEnclavePrivateKey(
+      key: try P256.KeyAgreement.PrivateKey(rawRepresentation: dataRepresentation), crypto: self)
+  }
+
+  func newSecureEnclavePrivateKey(accessControl: SecAccessControl) throws -> SecureEnclavePrivateKey
+  {
+    return DummySecureEnclavePrivateKey(
+      key: try P256.KeyAgreement.PrivateKey(rawRepresentation: dummyKeys.popLast()!), crypto: self)
+  }
+
+  func newEphemeralPrivateKey() -> P256.KeyAgreement.PrivateKey {
+    return try! P256.KeyAgreement.PrivateKey(rawRepresentation: dummyKeys.popLast()!)
+  }
+}
+
+struct DummySecureEnclavePrivateKey: SecureEnclavePrivateKey {
+  var key: P256.KeyAgreement.PrivateKey
+  var crypto: DummyCrypto
+
+  var publicKey: P256.KeyAgreement.PublicKey {
+    return key.publicKey
+  }
+
+  var dataRepresentation: Data {
+    return key.rawRepresentation
+  }
+
+  func sharedSecretFromKeyAgreement(with publicKeyShare: P256.KeyAgreement.PublicKey) throws
+    -> SharedSecret
+  {
+    if crypto.failingOperations {
+      throw DummyCryptoError.dummyError
+    }
+    return try key.sharedSecretFromKeyAgreement(with: publicKeyShare)
+  }
+}
+
+enum DummyCryptoError: LocalizedError {
+  case dummyError
+
+  public var errorDescription: String? {
+    switch self {
+    case .dummyError: return "dummy error"
+    }
+  }
+}
+</file>
+
+<file path="Tests/MemoryStream.swift">
+@testable import age_plugin_se
+
+class MemoryStream: Stream {
+  var inputLines: [String] = []
+  var outputLines: [String] = []
+
+  var output: String {
+    return outputLines.joined(separator: "\n")
+  }
+
+  func add(input: String) {
+    inputLines.append(contentsOf: input.components(separatedBy: "\n"))
+  }
+
+  func readLine() -> String? {
+    if inputLines.isEmpty {
+      return nil
+    }
+    let result = inputLines[0]
+    inputLines.removeFirst()
+    return result
+  }
+
+  func writeLine(_ line: String) {
+    outputLines.append(contentsOf: line.components(separatedBy: "\n"))
+  }
+}
+</file>
+
+<file path="Tests/PluginTests.swift">
+import XCTest
+
+@testable import age_plugin_se
+
+#if !os(Linux) && !os(Windows)
+  import CryptoKit
+#else
+  import Crypto
+#endif
+
+final class PluginTests: XCTestCase {
+  func testPublicKeySHA256Tag() throws {
+    let key = try P256.KeyAgreement.PublicKey(compactRepresentation: Data(count: 32))
+    XCTAssertEqual("Ujulpw", key.sha256Tag.base64RawEncodedString)
+  }
+
+  // Test to ensure that age-plugin-yubikey has the same output tag
+  // These values were extracted from a yubikey recipient
+  func testPublicKeySHA256Tag_YubiKeyPlugin() throws {
+    let key = try P256.KeyAgreement.PublicKey(
+      compactRepresentation: Data([
+        182, 32, 36, 98, 119, 204, 123, 231, 20, 203, 102, 119, 81, 232, 194, 196, 140, 194, 55,
+        12, 222, 162, 205, 252, 47, 114, 187, 157, 117, 151, 57, 158,
+      ]))
+    XCTAssertEqual(Data([128, 103, 102, 255]), key.sha256Tag)
+    XCTAssertEqual("gGdm/w", key.sha256Tag.base64RawEncodedString)
+  }
+
+  func testPublicKeyHMACTag() throws {
+    let key = try P256.KeyAgreement.PublicKey(compactRepresentation: Data(count: 32))
+    let ephemeralShare1 = Data([
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0,
+    ])
+    let ephemeralShare2 = Data([
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 1,
+    ])
+    XCTAssertEqual(
+      "l26jmA", key.hmacTag(using: SymmetricKey(data: ephemeralShare1)).base64RawEncodedString)
+    XCTAssertEqual(
+      "+w1lhg", key.hmacTag(using: SymmetricKey(data: ephemeralShare2)).base64RawEncodedString)
+  }
+}
+
+final class GenerateKeyTests: XCTestCase {
+  var stream = MemoryStream()
+  var crypto = DummyCrypto()
+
+  override func setUp() {
+    stream = MemoryStream()
+    crypto = DummyCrypto()
+  }
+
+  func testGenerate() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    let result = try plugin.generateKey(
+      accessControl: .anyBiometryOrPasscode, recipientType: .se,
+      now: Date(timeIntervalSinceReferenceDate: -123456789.0)
+    )
+    XCTAssertEqual(
+      """
+      # created: 1997-02-02T02:26:51Z
+      # access control: any biometry or passcode
+      # public key: age1se1qvlvs7x2g83gtaqg0dlstnm3ee8tr49dhtdnxudpfd0sy2gedw20kjmseq4
+      AGE-PLUGIN-SE-1XAJERWKUTH2YWAYH3F32SZKGMGPFSJF3HWJ7Z0Q9SP4JEDTMVG6Q6JD2VG
+
+      """, result.0)
+    XCTAssertEqual(
+      "age1se1qvlvs7x2g83gtaqg0dlstnm3ee8tr49dhtdnxudpfd0sy2gedw20kjmseq4", result.1)
+  }
+
+  func testGenerate_AnyBiometryAndPasscode() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    let result = try plugin.generateKey(
+      accessControl: .anyBiometryAndPasscode,
+      recipientType: .se,
+      now: Date(timeIntervalSinceReferenceDate: -123456789.0))
+    XCTAssertEqual(
+      """
+      # created: 1997-02-02T02:26:51Z
+      # access control: any biometry and passcode
+      # public key: age1se1qvlvs7x2g83gtaqg0dlstnm3ee8tr49dhtdnxudpfd0sy2gedw20kjmseq4
+      AGE-PLUGIN-SE-1XAJERWKUTH2YWAYH3F32SZKGMGPFSJF3HWJ7Z0Q9SP4JEDTMVG6Q6JD2VG
+
+      """, result.0)
+    XCTAssertEqual(
+      "age1se1qvlvs7x2g83gtaqg0dlstnm3ee8tr49dhtdnxudpfd0sy2gedw20kjmseq4", result.1)
+  }
+
+  func testGenerate_CurrentBiometry() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    let result = try plugin.generateKey(
+      accessControl: .currentBiometry, recipientType: .se,
+      now: Date(timeIntervalSinceReferenceDate: -123456789.0))
+    XCTAssertEqual(
+      """
+      # created: 1997-02-02T02:26:51Z
+      # access control: current biometry
+      # public key: age1se1qvlvs7x2g83gtaqg0dlstnm3ee8tr49dhtdnxudpfd0sy2gedw20kjmseq4
+      AGE-PLUGIN-SE-1XAJERWKUTH2YWAYH3F32SZKGMGPFSJF3HWJ7Z0Q9SP4JEDTMVG6Q6JD2VG
+
+      """, result.0)
+    XCTAssertEqual(
+      "age1se1qvlvs7x2g83gtaqg0dlstnm3ee8tr49dhtdnxudpfd0sy2gedw20kjmseq4", result.1)
+  }
+
+  func testGenerate_NoSecureEnclaveSupport() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    crypto.isSecureEnclaveAvailable = false
+    XCTAssertThrowsError(
+      try plugin.generateKey(
+        accessControl: .anyBiometryOrPasscode,
+        recipientType: .se,
+        now: Date(timeIntervalSinceReferenceDate: -123456789.0))
+    ) { error in
+      XCTAssertEqual(Plugin.Error.seUnsupported, error as! Plugin.Error)
+    }
+  }
+
+  func testGenerate_P256TagRecipient() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    let result = try plugin.generateKey(
+      accessControl: .anyBiometryOrPasscode, recipientType: .p256tag,
+      now: Date(timeIntervalSinceReferenceDate: -123456789.0)
+    )
+    XCTAssertEqual(
+      """
+      # created: 1997-02-02T02:26:51Z
+      # access control: any biometry or passcode
+      # public key: age1p256tag1qvlvs7x2g83gtaqg0dlstnm3ee8tr49dhtdnxudpfd0sy2gedw20kfhdut2
+      AGE-PLUGIN-SE-1XAJERWKUTH2YWAYH3F32SZKGMGPFSJF3HWJ7Z0Q9SP4JEDTMVG6Q6JD2VG
+
+      """, result.0)
+    XCTAssertEqual(
+      "age1p256tag1qvlvs7x2g83gtaqg0dlstnm3ee8tr49dhtdnxudpfd0sy2gedw20kfhdut2", result.1)
+  }
+}
+
+final class GenerateRecipientsTests: XCTestCase {
+  var stream = MemoryStream()
+  var crypto = DummyCrypto()
+
+  override func setUp() {
+    stream = MemoryStream()
+    crypto = DummyCrypto()
+  }
+
+  func testGenerate() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    let result = try plugin.generateRecipients(
+      input: """
+        # Comment 1
+        AGE-PLUGIN-SE-1XAJERWKUTH2YWAYH3F32SZKGMGPFSJF3HWJ7Z0Q9SP4JEDTMVG6Q6JD2VG
+        """,
+      recipientType: .se
+    )
+    XCTAssertEqual(
+      """
+      age1se1qvlvs7x2g83gtaqg0dlstnm3ee8tr49dhtdnxudpfd0sy2gedw20kjmseq4
+      """, result)
+  }
+
+  func testGenerate_P256Tag() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    let result = try plugin.generateRecipients(
+      input: """
+        # Comment 1
+        AGE-PLUGIN-SE-1XAJERWKUTH2YWAYH3F32SZKGMGPFSJF3HWJ7Z0Q9SP4JEDTMVG6Q6JD2VG
+        """,
+      recipientType: .p256tag
+    )
+    XCTAssertEqual(
+      """
+      age1p256tag1qvlvs7x2g83gtaqg0dlstnm3ee8tr49dhtdnxudpfd0sy2gedw20kfhdut2
+      """, result)
+  }
+
+  func testGenerate_MultipleLines() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    let result = try plugin.generateRecipients(
+      input: """
+        # Comment 1
+
+        AGE-PLUGIN-SE-1XAJERWKUTH2YWAYH3F32SZKGMGPFSJF3HWJ7Z0Q9SP4JEDTMVG6Q6JD2VG
+
+        # Comment 2
+
+        AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+        """,
+      recipientType: .se
+    )
+    XCTAssertEqual(
+      """
+      age1se1qvlvs7x2g83gtaqg0dlstnm3ee8tr49dhtdnxudpfd0sy2gedw20kjmseq4
+      age1se1qf0l9gks6x65ha077wq3w3u8fy02tpg3cd9w5j0jlgpfgqkcut2lw6hta9l
+      """, result)
+  }
+
+  func testGenerate_InvalidCharacter() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    XCTAssertThrowsError(
+      try plugin.generateRecipients(
+        input: """
+          - Comment 1
+          AGE-PLUGIN-SE-1XAJERWKUTH2YWAYH3F32SZKGMGPFSJF3HWJ7Z0Q9SP4JEDTMVG6Q6JD2VG
+          """,
+        recipientType: .se
+      ))
+  }
+
+  func testGenerate_InvalidPrivateKey() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    XCTAssertThrowsError(
+      try plugin.generateRecipients(
+        input: """
+          AGE-PLUGIN-SE-1XAJERWKUTH2YWAYH3F32SZKGMGPFSJF3HWJ7Z0Q9SP4JEDTMVG6Q6JD2VH
+          """,
+        recipientType: .se
+      ))
+  }
+
+  func testGenerate_UnknownPrivateKeyType() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    XCTAssertThrowsError(
+      try plugin.generateRecipients(
+        input: """
+          AGE-SECRET-KEY-18GRJ0APHQRYQ3FX60Y3P3TSUMSCQ0NE6HCA23PKNXTPA6RQSND2SPSLF4W
+          """,
+        recipientType: .se
+      )
+    ) { error in
+      XCTAssertEqual(Plugin.Error.unknownHRP("AGE-SECRET-KEY-"), error as! Plugin.Error)
+    }
+  }
+}
+
+final class RecipientV1Tests: XCTestCase {
+  var stream = MemoryStream()
+  var crypto = DummyCrypto()
+
+  override func setUp() {
+    stream = MemoryStream()
+    crypto = DummyCrypto()
+  }
+
+  // Just a test to get the identities of the test keys used in this test
+  func testKeys() throws {
+    let key1 = try! crypto.newSecureEnclavePrivateKey(
+      dataRepresentation: Data(base64RawEncoded: "OSe+zDK18qF0UrjxYVkmwvxyEdxZHp9F69rElj8bKS8")!)
+    XCTAssertEqual(
+      "AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG",
+      key1.ageIdentity)
+    XCTAssertEqual(
+      "age1se1qf0l9gks6x65ha077wq3w3u8fy02tpg3cd9w5j0jlgpfgqkcut2lw6hta9l",
+      key1.publicKey.ageRecipient(type: .se))
+    XCTAssertEqual(
+      "age1p256tag1qf0l9gks6x65ha077wq3w3u8fy02tpg3cd9w5j0jlgpfgqkcut2lwpmkcwq",
+      key1.publicKey.ageRecipient(type: .p256tag))
+
+    let key2 = try! crypto.newSecureEnclavePrivateKey(
+      dataRepresentation: Data(base64RawEncoded: "kBuQrPyfvCqBXJ5G4YBkqNER201niIeOmlXsRS2gxN0")!)
+    XCTAssertEqual(
+      "AGE-PLUGIN-SE-1JQDEPT8UN77Z4Q2UNERWRQRY4RG3RK6DV7YG0R562HKY2TDQCNWSREKAW7",
+      key2.ageIdentity)
+    XCTAssertEqual(
+      "age1se1q0mm28s88km3d8fvwve26xg4tt26cqamhxm79g9xvmw0f2erawj752upj6l",
+      key2.publicKey.ageRecipient(type: .se))
+    XCTAssertEqual(
+      "age1p256tag1q0mm28s88km3d8fvwve26xg4tt26cqamhxm79g9xvmw0f2erawj753suh3q",
+      key2.publicKey.ageRecipient(type: .p256tag))
+  }
+
+  func testNothing() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(input: "-> done\n")
+    plugin.runRecipientV1()
+    XCTAssertEqual("-> done\n", stream.output)
+  }
+
+  func testRecipient() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+
+    stream.add(
+      input:
+        """
+        -> add-recipient age1se1qf0l9gks6x65ha077wq3w3u8fy02tpg3cd9w5j0jlgpfgqkcut2lw6hta9l
+
+        -> wrap-file-key
+        AAAAAAAAAAAAAAAAAAAAAQ
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runRecipientV1()
+
+    XCTAssertEqual(
+      """
+      -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+      SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+      -> done
+
+      """, stream.output)
+  }
+
+  func testRecipient_P256Tag() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+
+    stream.add(
+      input:
+        """
+        -> add-recipient age1p256tag1qf0l9gks6x65ha077wq3w3u8fy02tpg3cd9w5j0jlgpfgqkcut2lwpmkcwq
+
+        -> wrap-file-key
+        AAAAAAAAAAAAAAAAAAAAAQ
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runRecipientV1()
+
+    XCTAssertEqual(
+      """
+      -> recipient-stanza 0 p256tag tHLLKQ Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+      eCnx6Ik2/6gX9M79e4+NQQ36GtZZj9qa6+pNlWjA1Nk
+      -> done
+
+      """, stream.output)
+  }
+
+  func testIdentity() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> wrap-file-key
+        AAAAAAAAAAAAAAAAAAAAAQ
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runRecipientV1()
+
+    XCTAssertEqual(
+      """
+      -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+      SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+      -> done
+
+      """, stream.output)
+  }
+
+  func testMultipleRecipients() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+
+    stream.add(
+      input:
+        """
+        -> add-recipient age1se1qf0l9gks6x65ha077wq3w3u8fy02tpg3cd9w5j0jlgpfgqkcut2lw6hta9l
+
+        -> wrap-file-key
+        AAAAAAAAAAAAAAAAAAAAAQ
+        -> add-recipient age1se1q0mm28s88km3d8fvwve26xg4tt26cqamhxm79g9xvmw0f2erawj752upj6l
+
+        -> done
+
+        -> ok
+
+        -> ok
+
+        """)
+    plugin.runRecipientV1()
+
+    XCTAssertEqual(
+      """
+      -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+      SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+      -> recipient-stanza 0 piv-p256 1mgwOA A1x2nUpw2wo/7z0JR5puskK6NuvW5XkQBwkun/T3WC80
+      9NGkkBZykDMgw6dndbbjnn7DQBalVV4sVIurWku030Y
+      -> done
+
+      """, stream.output)
+  }
+
+  func testMultipleRecipientsMultipleKeys() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+
+    stream.add(
+      input:
+        """
+        -> add-recipient age1se1qf0l9gks6x65ha077wq3w3u8fy02tpg3cd9w5j0jlgpfgqkcut2lw6hta9l
+
+        -> wrap-file-key
+        AAAAAAAAAAAAAAAAAAAAAQ
+        -> wrap-file-key
+        AAAAAAAAAAAAAAAAAAAAAg
+        -> add-recipient age1se1q0mm28s88km3d8fvwve26xg4tt26cqamhxm79g9xvmw0f2erawj752upj6l
+
+        -> done
+
+        -> ok
+
+        -> ok
+
+        -> ok
+
+        -> ok
+
+        """)
+    plugin.runRecipientV1()
+
+    XCTAssertEqual(
+      """
+      -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+      SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+      -> recipient-stanza 0 piv-p256 1mgwOA A1x2nUpw2wo/7z0JR5puskK6NuvW5XkQBwkun/T3WC80
+      9NGkkBZykDMgw6dndbbjnn7DQBalVV4sVIurWku030Y
+      -> recipient-stanza 1 piv-p256 14yi6A AvEp8Oz0cMnXhpXnWM6cwer4nEDHus/AvNp3kYnUH0Qs
+      L3ig8s2AqjusH/0lW6ZueSEYhpeV2ofrQpaKP06WI9g
+      -> recipient-stanza 1 piv-p256 1mgwOA AoIMpSYaKzGl5IBFaM9AFJXmrseGzTzcQjS9R4kRcjRi
+      vm8flaP+4W08S6LwFENwnEKLlpzZ5YqZ3NdpKFo7Vg8
+      -> done
+
+      """, stream.output)
+  }
+
+  func testRecipientError() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+
+    stream.add(
+      input:
+        """
+        -> add-recipient age1se1qf0l9gks6x65ha077wq3w3u8fy02tpg3cd9w5j0jlgpfgqkcut2lw6hta9l
+
+        -> wrap-file-key
+        AAAAAAAAAAAAAAAAAAAAAQ
+        -> add-recipient age1invalid1q0mm28s88km3d8fvwve26xg4tt26cqamhxm79g9xvmw0f2erawj75hkckfk
+
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runRecipientV1()
+
+    XCTAssertEqual(
+      """
+      -> error recipient 1
+      Q2hlY2tzdW0gZG9lc24ndCBtYXRjaA
+      -> done
+
+      """, stream.output)
+  }
+
+  func testIdentityError() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> wrap-file-key
+        AAAAAAAAAAAAAAAAAAAAAQ
+        -> add-identity AGE-PLUGIN-INVALID-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHS2FM3SW
+
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runRecipientV1()
+
+    XCTAssertEqual(
+      """
+      -> error identity 1
+      Q2hlY2tzdW0gZG9lc24ndCBtYXRjaA
+      -> done
+
+      """, stream.output)
+  }
+
+  func testInvalidRecipientHRP() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+
+    stream.add(
+      input:
+        """
+        -> add-recipient age1vld7p2khw44ds8t00vcfmjdf35zxqvn2trjccd35h4s22faj94vsjhn620
+
+        -> wrap-file-key
+        AAAAAAAAAAAAAAAAAAAAAQ
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runRecipientV1()
+
+    XCTAssertEqual(
+      """
+      -> error recipient 0
+      dW5rbm93biBIUlA6IGFnZQ
+      -> done
+
+      """, stream.output)
+  }
+
+  // func testFailingCryptoOperations() throws {
+  //   let plugin = Plugin(crypto: crypto, stream: stream)
+
+  //   stream.add(
+  //     input:
+  //       """
+  //       -> add-recipient age1se1qf0l9gks6x65ha077wq3w3u8fy02tpg3cd9w5j0jlgpfgqkcut2lw6hta9l
+
+  //       -> wrap-file-key
+  //       AAAAAAAAAAAAAAAAAAAAAQ
+  //       -> done
+
+  //       -> ok
+
+  //       """)
+  //   crypto.failingOperations = true
+  //   plugin.runRecipientV1()
+
+  //   XCTAssertEqual(
+  //     """
+  //     -> error internal
+  //     ZHVtbXkgZXJyb3I
+  //     -> done
+
+  //     """, stream.output)
+  // }
+
+  func testUnknownStanzaTypes() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+
+    stream.add(
+      input:
+        """
+        -> add-recipient age1se1qf0l9gks6x65ha077wq3w3u8fy02tpg3cd9w5j0jlgpfgqkcut2lw6hta9l
+
+        -> unknown-stanza 1 2 3
+
+        -> wrap-file-key
+        AAAAAAAAAAAAAAAAAAAAAQ
+        -> anotherunknownstanza
+        AAAAAAAAAAAAAAAAAAAAAQ
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runRecipientV1()
+
+    XCTAssertEqual(
+      """
+      -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+      SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+      -> done
+
+      """, stream.output)
+  }
+}
+
+final class IdentityV1Tests: XCTestCase {
+  var stream = MemoryStream()
+  var crypto = DummyCrypto()
+
+  override func setUp() {
+    stream = MemoryStream()
+    crypto = DummyCrypto()
+  }
+
+  func testNothing() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(input: "-> done\n")
+    plugin.runIdentityV1()
+    XCTAssertEqual("-> done\n", stream.output)
+  }
+
+  func testRecipientStanza() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> file-key 0
+      AAAAAAAAAAAAAAAAAAAAAQ
+      -> done
+
+      """, stream.output)
+  }
+
+  func testRecipientStanza_P256Tag() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> recipient-stanza 0 p256tag tHLLKQ Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        eCnx6Ik2/6gX9M79e4+NQQ36GtZZj9qa6+pNlWjA1Nk
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> file-key 0
+      AAAAAAAAAAAAAAAAAAAAAQ
+      -> done
+
+      """, stream.output)
+  }
+
+  func testRecipientStanzaMultipleFiles() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+        -> recipient-stanza 1 piv-p256 14yi6A AvEp8Oz0cMnXhpXnWM6cwer4nEDHus/AvNp3kYnUH0Qs
+        L3ig8s2AqjusH/0lW6ZueSEYhpeV2ofrQpaKP06WI9g
+        -> done
+
+        -> ok
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> file-key 0
+      AAAAAAAAAAAAAAAAAAAAAQ
+      -> file-key 1
+      AAAAAAAAAAAAAAAAAAAAAg
+      -> done
+
+      """, stream.output)
+  }
+
+  func testRecipientStanzaMultipleFilesMultipleIdentities() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> add-identity AGE-PLUGIN-SE-1JQDEPT8UN77Z4Q2UNERWRQRY4RG3RK6DV7YG0R562HKY2TDQCNWSREKAW7
+
+        -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+        -> recipient-stanza 0 piv-p256 1mgwOA A1x2nUpw2wo/7z0JR5puskK6NuvW5XkQBwkun/T3WC80
+        9NGkkBZykDMgw6dndbbjnn7DQBalVV4sVIurWku030Y
+        -> recipient-stanza 1 piv-p256 14yi6A AvEp8Oz0cMnXhpXnWM6cwer4nEDHus/AvNp3kYnUH0Qs
+        L3ig8s2AqjusH/0lW6ZueSEYhpeV2ofrQpaKP06WI9g
+        -> recipient-stanza 1 piv-p256 1mgwOA AoIMpSYaKzGl5IBFaM9AFJXmrseGzTzcQjS9R4kRcjRi
+        vm8flaP+4W08S6LwFENwnEKLlpzZ5YqZ3NdpKFo7Vg8
+        -> done
+
+        -> ok
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> file-key 0
+      AAAAAAAAAAAAAAAAAAAAAQ
+      -> file-key 1
+      AAAAAAAAAAAAAAAAAAAAAg
+      -> done
+
+      """, stream.output)
+  }
+
+  func testRecipientStanzaMultipleStanzasMissingIdentity() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-1JQDEPT8UN77Z4Q2UNERWRQRY4RG3RK6DV7YG0R562HKY2TDQCNWSREKAW7
+
+        -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+        -> recipient-stanza 0 piv-p256 1mgwOA A1x2nUpw2wo/7z0JR5puskK6NuvW5XkQBwkun/T3WC80
+        9NGkkBZykDMgw6dndbbjnn7DQBalVV4sVIurWku030Y
+        -> done
+
+        -> ok
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> file-key 0
+      AAAAAAAAAAAAAAAAAAAAAQ
+      -> done
+
+      """, stream.output)
+  }
+
+  func testRecipientStanza_UnknownType() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> recipient-stanza 0 X25519 A1x2nUpw2wo/7z0JR5puskK6NuvW5XkQBwkun/T3WC80
+        9NGkkBZykDMgw6dndbbjnn7DQBalVV4sVIurWku030Y
+        -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> file-key 0
+      AAAAAAAAAAAAAAAAAAAAAQ
+      -> done
+
+      """, stream.output)
+  }
+
+  func testIdentityError() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> add-identity AGE-PLUGIN-INVALID-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHS2FM3SW
+
+        -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+        -> done
+
+        -> ok
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> error identity 1
+      Q2hlY2tzdW0gZG9lc24ndCBtYXRjaA
+      -> done
+
+      """, stream.output)
+  }
+
+  func testUnknownIdentityHRP() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> add-identity AGE-SECRET-KEY-1MCFVWZK6PK625PWMWVYPZDQM4N7AS3VA754JHCC60ZT7WJ79TQQSQDYVGF
+
+        -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+        -> done
+
+        -> ok
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> error identity 1
+      dW5rbm93biBIUlA6IEFHRS1TRUNSRVQtS0VZLQ
+      -> done
+
+      """, stream.output)
+  }
+
+  func testRecipientStanzaMultipleFilesStructurallyInvalidFile() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> add-identity AGE-PLUGIN-SE-1JQDEPT8UN77Z4Q2UNERWRQRY4RG3RK6DV7YG0R562HKY2TDQCNWSREKAW7
+
+        -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+        -> recipient-stanza 0 piv-p256 1mgwOA
+        9NGkkBZykDMgw6dndbbjnn7DQBalVV4sVIurWku030Y
+        -> recipient-stanza 1 piv-p256 14yi6A AvEp8Oz0cMnXhpXnWM6cwer4nEDHus/AvNp3kYnUH0Qs
+        L3ig8s2AqjusH/0lW6ZueSEYhpeV2ofrQpaKP06WI9g
+        -> recipient-stanza 1 piv-p256 1mgwOA AoIMpSYaKzGl5IBFaM9AFJXmrseGzTzcQjS9R4kRcjRi
+        vm8flaP+4W08S6LwFENwnEKLlpzZ5YqZ3NdpKFo7Vg8
+        -> done
+
+        -> ok
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> error stanza 0
+      aW5jb3JyZWN0IGFyZ3VtZW50IGNvdW50
+      -> file-key 1
+      AAAAAAAAAAAAAAAAAAAAAg
+      -> done
+
+      """, stream.output)
+  }
+
+  func testRecipientStanzaInvalidStructure_ArgumentCount() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> recipient-stanza 0 piv-p256 1mgwOA
+        9NGkkBZykDMgw6dndbbjnn7DQBalVV4sVIurWku030Y
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> error stanza 0
+      aW5jb3JyZWN0IGFyZ3VtZW50IGNvdW50
+      -> done
+
+      """, stream.output)
+  }
+
+  func testRecipientStanzaInvalidTag() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> recipient-stanza 0 piv-p256 14yi Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> error stanza 0
+      aW52YWxpZCB0YWc
+      -> done
+
+      """, stream.output)
+  }
+
+  func testRecipientStanzaInvalidShare() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5Q
+        SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> error stanza 0
+      aW52YWxpZCBzaGFyZQ
+      -> done
+
+      """, stream.output)
+  }
+
+  func testRecipientStanzaInvalidBody() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        AAAAAAAAAAAAAAAAAAAAARIiJq2e9+1E+xK92Pvdtw
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> error stanza 0
+      aW52YWxpZCBib2R5
+      -> done
+
+      """, stream.output)
+  }
+
+  func testFailingCryptoOperations() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+
+    stream.add(
+      input:
+        """
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> add-identity AGE-PLUGIN-SE-1JQDEPT8UN77Z4Q2UNERWRQRY4RG3RK6DV7YG0R562HKY2TDQCNWSREKAW7
+
+        -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+        -> recipient-stanza 0 piv-p256 1mgwOA A1x2nUpw2wo/7z0JR5puskK6NuvW5XkQBwkun/T3WC80
+        9NGkkBZykDMgw6dndbbjnn7DQBalVV4sVIurWku030Y
+        -> done
+
+        -> ok
+
+        -> ok
+
+        -> ok
+
+        """)
+    crypto.failingOperations = true
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> msg
+      ZHVtbXkgZXJyb3I
+      -> msg
+      ZHVtbXkgZXJyb3I
+      -> done
+
+      """, stream.output)
+  }
+
+  func testUnknownStanzas() throws {
+    let plugin = Plugin(crypto: crypto, stream: stream)
+    stream.add(
+      input:
+        """
+        -> unknown-stanza-1 a bbb c
+
+        -> add-identity AGE-PLUGIN-SE-18YNMANPJKHE2ZAZJHRCKZKFXCT78YYWUTY0F730TMTZFV0CM9YHSRP8GPG
+
+        -> unknown-stanza-2
+        9NGkkBZykDMgw6dndbbjnn7DQBalVV4sVIurWku030Y
+        -> recipient-stanza 0 piv-p256 14yi6A Az7IeMpB4oX0CHt/Bc9xzk6x1K262zNxoUtfAikZa5T7
+        SLgnrcnHLaJHCx+fwSEWWoflDgL91oDGCGNwb2YaT+4
+        -> done
+
+        -> ok
+
+        """)
+    plugin.runIdentityV1()
+
+    XCTAssertEqual(
+      """
+      -> file-key 0
+      AAAAAAAAAAAAAAAAAAAAAQ
+      -> done
+
+      """, stream.output)
+  }
+
+}
+</file>
+
+<file path="Tests/StanzaTests.swift">
+import XCTest
+
+@testable import age_plugin_se
+
+final class StanzaTests: XCTestCase {
+  var stream = MemoryStream()
+
+  override func setUp() {
+    stream = MemoryStream()
+  }
+
+  func testReadFrom() throws {
+    stream.add(
+      input:
+        """
+        -> mytype MyArgument1 MyArgument2
+        TG9yZW0gaXBzdW0gZG9sb3Igc2l0IGFtZXQsIGNvbnNlY3RldHVyIGFkaXBpc2Np
+        bmcgZWxpdCwgc2VkIGRvIGVpdXNtb2QgdGVtcG9yIGluY2lkaWR1bnQgdXQgbGFi
+        b3JlIGV0IGRvbG9yZSBtYWduYSBhbGlxdWEuIFV0IGVuaW0gYWQgbWluaW0gdmVu
+        aWFtLCBxdWlzIG5vc3RydWQgZXhlcmNpdGF0aW9uIHVsbGFtY28gbGFib3JpcyBu
+        aXNpIHV0IGFsaXF1aXAgZXggZWEgY29tbW9kbyBjb25zZXF1YXQuIER1aXMgYXV0
+        ZSBpcnVyZSBkb2xvciBpbiByZXByZWhlbmRlcml0IGluIHZvbHVwdGF0ZSB2ZWxp
+        dCBlc3NlIGNpbGx1bSBkb2xvcmUgZXUgZnVnaWF0IG51bGxhIHBhcmlhdHVyLiBF
+        eGNlcHRldXIgc2ludCBvY2NhZWNhdCBjdXBpZGF0YXQgbm9uIHByb2lkZW50LCBz
+        dW50IGluIGN1bHBhIHF1aSBvZmZpY2lhIGRlc2VydW50IG1vbGxpdCBhbmltIGlk
+        IGVzdCBsYWJvcnVtLg
+        """)
+    XCTAssertEqual(
+      Stanza(
+        type: "mytype",
+        args: ["MyArgument1", "MyArgument2"],
+        body:
+          Data(
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+              .utf8
+          )
+      ), try Stanza.readFrom(stream: stream))
+  }
+
+  func testReadFrom_EmptyBody() throws {
+    stream.add(
+      input:
+        """
+        -> mytype
+
+        """)
+    XCTAssertEqual(
+      Stanza(
+        type: "mytype",
+        args: [],
+        body: Data()
+      ), try Stanza.readFrom(stream: stream))
+  }
+
+  func testReadFrom_EmptyLastLine() throws {
+    stream.add(
+      input:
+        """
+        -> mystanza
+        TG9yZW0gaXBzdW0gZG9sb3Igc2l0IGFtZXQsIGNvbnNlY3RldHVyIGFkaXBpc2Np
+
+        """)
+    XCTAssertEqual(
+      Stanza(
+        type: "mystanza",
+        args: [],
+        body:
+          Data("Lorem ipsum dolor sit amet, consectetur adipisci".utf8)
+      ), try Stanza.readFrom(stream: stream))
+  }
+
+  func testReadFrom_MissingType() throws {
+    stream.add(
+      input:
+        """
+        ->
+        IGVzdCBsYWJvcnVtLg
+        """)
+    XCTAssertThrowsError(try Stanza.readFrom(stream: stream)) { error in
+      XCTAssertEqual(error as! Plugin.Error, Plugin.Error.invalidStanza)
+    }
+  }
+
+  func testReadFrom_InvalidPrefix() throws {
+    stream.add(
+      input:
+        """
+        => mystanza
+        IGVzdCBsYWJvcnVtLg
+        """)
+    XCTAssertThrowsError(try Stanza.readFrom(stream: stream)) { error in
+      XCTAssertEqual(error as! Plugin.Error, Plugin.Error.invalidStanza)
+    }
+  }
+
+  func testReadFrom_BodyTooLong() throws {
+    stream.add(
+      input:
+        """
+        -> mystanza
+        dW50IGluIGN1bHBhIHF1aSBvZmZpY2lhIGRlc2VydW50IG1vbGxpdCBhbmltIGlkIGVzdCBsYWJvcnVtLg
+        """)
+    XCTAssertThrowsError(try Stanza.readFrom(stream: stream)) { error in
+      XCTAssertEqual(error as! Plugin.Error, Plugin.Error.invalidStanza)
+    }
+  }
+
+  func testReadFrom_BodyInvalid() throws {
+    stream.add(
+      input:
+        """
+        -> mystanza
+        _dW50IGluIGN1bHBhIHF1aSBvZmZpY2lhIGRlc2VydW50IG1vbGxpdCBhbmltIGlkIGVzdCBsYWJvcnVtLg
+        """)
+    XCTAssertThrowsError(try Stanza.readFrom(stream: stream)) { error in
+      XCTAssertEqual(error as! Plugin.Error, Plugin.Error.invalidStanza)
+    }
+  }
+
+  func testReadFrom_BodyIncomplete() throws {
+    stream.add(
+      input:
+        """
+        -> mystanza
+        dW50IGluIGN1bHBhIHF1aSBvZmZpY2lhIGRlc2VydW50IG1vbGxpdCBhbmltIGlk
+        """)
+    XCTAssertThrowsError(try Stanza.readFrom(stream: stream)) { error in
+      XCTAssertEqual(error as! Plugin.Error, Plugin.Error.incompleteStanza)
+    }
+  }
+
+  func testReadFrom_BodyMissing() throws {
+    stream.add(
+      input:
+        """
+        -> mystanza
+        """)
+    XCTAssertThrowsError(try Stanza.readFrom(stream: stream)) { error in
+      XCTAssertEqual(error as! Plugin.Error, Plugin.Error.incompleteStanza)
+    }
+  }
+
+  func testReadFrom_BodyHasPadding() throws {
+    stream.add(
+      input:
+        """
+        => mystanza
+        IGVzdCBsYWJvcnVtLg==
+        """)
+    XCTAssertThrowsError(try Stanza.readFrom(stream: stream)) { error in
+      XCTAssertEqual(error as! Plugin.Error, Plugin.Error.invalidStanza)
+    }
+  }
+
+  func testReadFrom_NoInput() throws {
+    XCTAssertThrowsError(try Stanza.readFrom(stream: stream)) { error in
+      XCTAssertEqual(error as! Plugin.Error, Plugin.Error.incompleteStanza)
+    }
+  }
+
+  func testWriteTo() throws {
+    Stanza(
+      type: "mytype",
+      args: ["MyArgument1", "MyArgument2"],
+      body:
+        Data(
+          "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+            .utf8)
+    ).writeTo(stream: stream)
+    XCTAssertEqual(
+      """
+      -> mytype MyArgument1 MyArgument2
+      TG9yZW0gaXBzdW0gZG9sb3Igc2l0IGFtZXQsIGNvbnNlY3RldHVyIGFkaXBpc2Np
+      bmcgZWxpdCwgc2VkIGRvIGVpdXNtb2QgdGVtcG9yIGluY2lkaWR1bnQgdXQgbGFi
+      b3JlIGV0IGRvbG9yZSBtYWduYSBhbGlxdWEuIFV0IGVuaW0gYWQgbWluaW0gdmVu
+      aWFtLCBxdWlzIG5vc3RydWQgZXhlcmNpdGF0aW9uIHVsbGFtY28gbGFib3JpcyBu
+      aXNpIHV0IGFsaXF1aXAgZXggZWEgY29tbW9kbyBjb25zZXF1YXQuIER1aXMgYXV0
+      ZSBpcnVyZSBkb2xvciBpbiByZXByZWhlbmRlcml0IGluIHZvbHVwdGF0ZSB2ZWxp
+      dCBlc3NlIGNpbGx1bSBkb2xvcmUgZXUgZnVnaWF0IG51bGxhIHBhcmlhdHVyLiBF
+      eGNlcHRldXIgc2ludCBvY2NhZWNhdCBjdXBpZGF0YXQgbm9uIHByb2lkZW50LCBz
+      dW50IGluIGN1bHBhIHF1aSBvZmZpY2lhIGRlc2VydW50IG1vbGxpdCBhbmltIGlk
+      IGVzdCBsYWJvcnVtLg
+      """, stream.output)
+  }
+
+  func testWriteTo_NoArguments() throws {
+    Stanza(
+      type: "mytype",
+      body: Data("Lorem ipsum".utf8)
+    ).writeTo(stream: stream)
+    XCTAssertEqual(
+      """
+      -> mytype
+      TG9yZW0gaXBzdW0
+      """, stream.output)
+  }
+
+  func testWriteTo_EmptyBody() throws {
+    Stanza(
+      type: "mytype",
+      args: [],
+      body: Data()
+    ).writeTo(stream: stream)
+    XCTAssertEqual(
+      """
+      -> mytype
+
+      """, stream.output)
+  }
+}
+</file>
+
+<file path=".gitignore">
+.DS_Store
+/.build
+/manual-tests
+/.vscode/launch.json
+/default.profraw
+</file>
+
+<file path="LICENSE.txt">
+MIT License
+
+Copyright (c) 2023 Remko Tronçon
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</file>
+
+<file path="Makefile">
+PREFIX ?= /usr/local
+AGE ?= age
+SCDOC=$(shell command -v scdoc)
+
+export SOURCE_DATE_EPOCH=1715696361
+
+ifneq ($(V),1)
+AT=@
+endif
+
+ifeq ($(RELEASE),1)
+SWIFT_BUILD_FLAGS=-c release --disable-sandbox $(SWIFT_EXTRA_BUILD_FLAGS)
+endif
+
+SWIFT_TEST_FLAGS := --parallel
+ifeq ($(COVERAGE),1)
+SWIFT_TEST_FLAGS := $(SWIFT_TEST_FLAGS) --enable-code-coverage
+endif
+# E.g. Tests.RecipientV1Tests/testRecipient
+ifneq ($(TEST_FILTER),)
+SWIFT_TEST_FLAGS := $(SWIFT_TEST_FLAGS) --filter $(TEST_FILTER)
+endif
+
+ifeq ($(OS),Windows_NT)
+UNAME_S=Windows
+else
+UNAME_S=$(shell uname -s)
+endif
+
+VERSION ?= $(shell cat Sources/CLI.swift | grep '^let version' | sed -e "s/.*\"v\\(.*\\)\".*/\\1/")
+BUILD_DIR ?= $(shell swift build $(SWIFT_BUILD_FLAGS) --show-bin-path)
+COMMIT_SHA=$(shell git rev-parse HEAD)
+PACKAGE_ARCHS = arm64-apple-macosx x86_64-apple-macosx
+PACKAGE_LINUX_ARCHS = aarch64 x86_64
+APK_PACKAGE_VERSION=r0
+
+ECHO = echo
+ifneq ($(UNAME_S),Darwin)
+ECHO = /usr/bin/echo -e
+endif
+
+ifneq ($(SCDOC),)
+MAN_TARGET := man
+endif
+
+.PHONY: all
+all: $(BUILD_DIR)/age-plugin-p256tag $(MAN_TARGET)
+	swift build $(SWIFT_BUILD_FLAGS)
+
+.PHONY: package
+ifeq ($(UNAME_S),Darwin)
+package:
+	for arch in $(PACKAGE_ARCHS); do swift build -c release --triple $$arch; done
+	lipo -create -output .build/age-plugin-se $(foreach arch, $(PACKAGE_ARCHS), \
+		$(shell swift build -c release --triple $(arch) --show-bin-path)/age-plugin-se)
+	cd .build && ditto -c -k age-plugin-se age-plugin-se-v$(VERSION)-macos.zip
+package-linux:
+	set -e; for arch in $(PACKAGE_LINUX_ARCHS); do \
+		package=age-plugin-se-v$(VERSION)-$$arch-linux; \
+		make RELEASE=1 PREFIX=/usr DESTDIR=.build/$$package SWIFT_EXTRA_BUILD_FLAGS="--swift-sdk $$arch-swift-linux-musl" all install; \
+		tar czf .build/$$package.tgz -C .build $$package; \
+		go run Scripts/alpine/dir2apk.go --arch=$$arch --version=$(VERSION)-$(APK_PACKAGE_VERSION) --commit=$(COMMIT_SHA) --key=Scripts/alpine/r@mko.re-66596f64.rsa --out=.build .build/$$package; \
+	done
+else
+package:
+	swift build -c release --static-swift-stdlib
+	tar czf .build/age-plugin-se-v$(VERSION)-$(shell uname -m)-linux.tgz -C $(shell swift build -c release --show-bin-path) age-plugin-se
+endif
+
+.PHONY: test
+test:
+	swift test $(SWIFT_TEST_FLAGS)
+ifeq ($(COVERAGE),1)
+	swift ./Scripts/ProcessCoverage.swift $$(swift test --show-codecov-path) .build/coverage.json .build/coverage.html .build/coverage.svg
+endif
+
+
+.PHONY: test-loop
+test-loop: test
+	reflex -r '\.swift$$' $(MAKE) test
+
+
+# Need to explicitly list source dirs instead of `.`, because swift-format doesn't ignore
+# hidden dirs. Should be fixed 'soon'? (https://github.com/apple/swift-format/pull/644)
+.PHONY: lint
+lint:
+	swift-format lint --recursive --strict Package.swift Sources Scripts Tests
+	
+.PHONY: install 
+install: install-doc
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install $(BUILD_DIR)/age-plugin-se $(DESTDIR)$(PREFIX)/bin
+
+.PHONY: install-doc
+install-doc:
+	install -d $(DESTDIR)$(PREFIX)/share/licenses/age-plugin-se
+	install LICENSE.txt $(DESTDIR)$(PREFIX)/share/licenses/age-plugin-se
+ifneq ($(SCDOC),)
+	install -d $(DESTDIR)$(PREFIX)/share/man/man1
+	install .build/age-plugin-se.1 $(DESTDIR)$(PREFIX)/share/man/man1
+endif
+
+man: .build/age-plugin-se.1
+
+.build/age-plugin-se.1: Documentation/age-plugin-se.1.scd
+	mkdir -p .build
+	cat $< | sed "s/@VERSION@/$(VERSION)/g" | scdoc > $@.tmp
+	mv $@.tmp $@
+
+$(BUILD_DIR)/age-plugin-p256tag:
+	mkdir -p $(BUILD_DIR)
+	ln -sf age-plugin-se $@
+
+
+.PHONY: smoke-test
+smoke-test:
+	$(AT)PATH="$(BUILD_DIR):$$PATH" && \
+	$(ECHO) '\xf0\x9f\x94\x91 Generating key...' && \
+	recipient=`age-plugin-se keygen $(TEST_KEYGEN_FLAGS) --access-control=any-biometry -o key.txt | sed -e "s/Public key: //"` && \
+	$(ECHO) '\xf0\x9f\x94\x92 Encrypting...' && \
+	($(ECHO) '\xe2\x9c\x85 \x53\x75\x63\x63\x65\x73\x73' | $(AGE) --encrypt --recipient $$recipient -o secret.txt.age) && \
+	$(ECHO) '\xf0\x9f\x94\x93 Decrypting...' && \
+	$(AGE) --decrypt -i key.txt secret.txt.age && \
+	rm -f key.txt secret.txt.age
+
+.PHONY: smoke-test-noninteractive
+smoke-test-noninteractive:
+	$(AT)PATH="$(BUILD_DIR):$$PATH" && \
+	$(ECHO) '\xf0\x9f\x94\x91 Generating key...' && \
+	recipient=`age-plugin-se keygen $(TEST_KEYGEN_FLAGS) --access-control=none -o key.txt | sed -e "s/Public key: //"` && \
+	$(ECHO) '\xf0\x9f\x94\x92 Encrypting...' && \
+	($(ECHO) '\xe2\x9c\x85 \x53\x75\x63\x63\x65\x73\x73' | $(AGE) --encrypt --recipient $$recipient -o secret.txt.age) && \
+	$(ECHO) '\xf0\x9f\x94\x93 Decrypting...' && \
+	$(AGE) --decrypt -i key.txt secret.txt.age && \
+	rm -f key.txt secret.txt.age
+
+.PHONY: smoke-test-encrypt
+smoke-test-encrypt:
+	$(AT)PATH="$(BUILD_DIR):$$PATH" && \
+	$(ECHO) '\xf0\x9f\x94\x92 Encrypting...' && \
+	($(ECHO) "test" | $(AGE) --encrypt $(TEST_KEYGEN_FLAGS) --recipient age1se1qgg72x2qfk9wg3wh0qg9u0v7l5dkq4jx69fv80p6wdus3ftg6flwg5dz2dp -o secret.txt.age) && \
+	$(ECHO) '\xe2\x9c\x85 \x53\x75\x63\x63\x65\x73\x73' && \
+	rm -f secret.txt.age
+
+INTEROP_PLUGIN=yubikey
+
+.PHONY: piv-p256-decrypt-interop-test
+piv-p256-decrypt-interop-test:
+	$(AT)PATH="$(BUILD_DIR):$$PATH" && \
+	$(ECHO) '\xf0\x9f\x94\x91 Generating key...' && \
+	recipient=`age-plugin-se keygen --access-control=none -o key.txt | sed -e "s/Public key: //"` && \
+	interop_recipient=`./Scripts/ConvertBech32HRP.swift $$recipient age1$(INTEROP_PLUGIN)` && \
+	$(ECHO) '\xf0\x9f\x94\x92 Encrypting to '$$interop_recipient'...' && \
+	($(ECHO) '\xe2\x9c\x85 \x53\x75\x63\x63\x65\x73\x73' | $(AGE) --encrypt --recipient $$interop_recipient -o secret.txt.age) && \
+	$(ECHO) '\xf0\x9f\x94\x93 Decrypting...' && \
+	$(AGE) --decrypt -i key.txt secret.txt.age && \
+	rm -f key.txt secret.txt.age
+
+.PHONY: gen-manual-tests
+gen-manual-tests:
+	-rm -rf gen-manual-tests
+	mkdir -p manual-tests
+	PATH="$(BUILD_DIR):$$PATH" && set -e && \
+	for control in none passcode current-biometry any-biometry current-biometry-and-passcode any-biometry-and-passcode any-biometry-or-passcode; do \
+		recipient=`age-plugin-se keygen $(TEST_KEYGEN_FLAGS) --access-control=$$control -o manual-tests/key.$$control.txt | sed -e "s/Public key: //"`;\
+		($(ECHO) '\xe2\x9c\x85 \x53\x75\x63\x63\x65\x73\x73' | $(AGE) --encrypt --recipient $$recipient -o manual-tests/secret.txt.$$control.age); \
+	done
+
+.PHONY: run-manual-tests
+run-manual-tests:
+	$(AT)PATH="$(BUILD_DIR):$$PATH" && set -e && \
+	for control in none passcode any-biometry current-biometry-and-passcode any-biometry-and-passcode any-biometry-or-passcode; do \
+		$(ECHO) "\\xf0\\x9f\\x94\\x93 Decrypting '$$control'..." && \
+		$(AGE) --decrypt -i manual-tests/key.$$control.txt manual-tests/secret.txt.$$control.age; \
+		$(ECHO) "\n-----\n"; \
+	done
+
+.PHONY: clean
+clean:
+	-rm -rf .build manual-tests
+
+.IGNORE: .build/age-plugin-se.1
+</file>
+
+<file path="Package.resolved">
+{
+  "pins" : [
+    {
+      "identity" : "swift-crypto",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-crypto.git",
+      "state" : {
+        "revision" : "e8d6eba1fef23ae5b359c46b03f7d94be2f41fed",
+        "version" : "3.12.3"
+      }
+    }
+  ],
+  "version" : 2
+}
+</file>
+
+<file path="Package.swift">
+// swift-tools-version: 5.7
+
+import PackageDescription
+
+let package = Package(
+  name: "AgeSecureEnclavePlugin",
+  platforms: [.macOS(.v13)],
+  dependencies: [
+    // Only used on Linux & Windows
+    .package(url: "https://github.com/apple/swift-crypto.git", "2.0.0"..<"4.0.0")
+  ],
+  targets: [
+    .executableTarget(
+      name: "age-plugin-se",
+      dependencies: [
+        .product(
+          name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .windows]))
+      ],
+      path: "Sources"),
+    .testTarget(name: "Tests", dependencies: ["age-plugin-se"], path: "Tests"),
+  ]
+)
+</file>
+
+<file path="README.md">
+# Age plugin for Apple's Secure Enclave
+
+[![Build](https://github.com/remko/age-plugin-se/actions/workflows/build-main.yml/badge.svg)](https://github.com/remko/age-plugin-se/actions/workflows/build-main.yml)
+[![Coverage](https://remko.github.io/age-plugin-se/ci/coverage.svg)](https://remko.github.io/age-plugin-se/ci/coverage.html)
+
+`age-plugin-se` is a plugin for [age](https://age-encryption.org),
+enabling encryption using [Apple's Secure
+Enclave](https://support.apple.com/en-gb/guide/security/sec59b0b31ff/web).
+
+    $ age-plugin-se keygen --access-control=any-biometry -o key.txt
+    Public key: age1se1qgg72x2qfk9wg3wh0qg9u0v7l5dkq4jx69fv80p6wdus3ftg6flwg5dz2dp
+    $ tar cvz ~/data | age -r age1se1qgg72x2qfk9wg3wh0qg9u0v7l5dkq4jx69fv80p6wdus3ftg6flwg5dz2dp -o data.tar.gz.age
+    $ age --decrypt -i key.txt -o data.tar.gz data.tar.gz.age
+
+<div align="center">
+<img src="https://raw.githubusercontent.com/remko/age-plugin-se/main/Documentation/img/screenshot-biometry.png" alt="Biometry prompt" width=350/>
+</div>
+
+Besides direct usage with age as above, you can use it with any tool
+that uses age in the backend. For example, you can store your passwords
+with [passage](https://github.com/FiloSottile/passage), and conveniently access
+them with Touch ID.
+
+
+## Requirements
+
+To generate identities (private keys) and decrypt encrypted files, you need a Mac
+running macOS 13 (Ventura) with a Secure Enclave processor.
+
+For encrypting files, you need macOS 13 (Ventura), Linux, or Windows. A
+Secure Enclave processor is not necessary.
+
+## Installation
+
+### Homebrew
+
+    brew install age-plugin-se
+
+### Pre-built binary
+
+1.  Download a binary from [the releases
+    page](https://github.com/remko/age-plugin-se/releases)
+2.  Extract the package
+3.  (Windows only) Download and install
+    [Swift](https://www.swift.org/download/)
+4.  (macOS only) Trust `age-plugin-se` once by Control-clicking the file
+    in Finder, choosing *Open*, and confirming trust
+5.  Move `age-plugin-se` to somewhere on your executable path (e.g.
+    `/usr/local/bin`)
+
+### Alpine Linux
+
+For Alpine Linux, there are also pre-built `.apk` packages available on [the releases page](https://github.com/remko/age-plugin-se/releases).
+
+To instal them:
+
+1. Download the [package signing key](https://raw.githubusercontent.com/remko/age-plugin-se/main/Scripts/alpine/r%40mko.re-66596f64.rsa.pub), and install it in `/etc/apk/keys`.
+
+        doas wget -P /etc/apk/keys https://raw.githubusercontent.com/remko/age-plugin-se/main/Scripts/alpine/r@mko.re-66596f64.rsa.pub
+
+2. Download the binary (and optionally the `-doc`) `.apk` file from [the releases
+page](https://github.com/remko/age-plugin-se/releases).
+3. Install the downloaded package(s):
+    
+        doas apk add ./age-plugin-se-0.1.3-r0-x86_64.apk
+        doas apk add ./age-plugin-se-doc-0.1.3-r0-noarch.apk
+
+
+### Building from source
+
+1.  (non-macOS only) Download and install
+    [Swift](https://www.swift.org/download/)
+
+2.  Clone [the source code
+    repository](https://github.com/remko/age-plugin-se) or get a source
+    package from [the releases
+    page](https://github.com/remko/age-plugin-se/releases)
+
+3.  Build the plugin
+
+        make
+
+4.  Install the plugin
+
+        sudo make install PREFIX=/usr/local
+
+
+## Guide
+
+In order to encrypt data using the Secure Enclave of your machine, you need to
+generate a private key that is bound to the Secure Enclave. You can generate
+such a private key for age using the `age-plugin-se keygen` command. When
+creating such a key, you also specify which type of protection you want, which
+is a combination of biometry (e.g. Touch ID) and passcode:
+
+```
+$ age-plugin-se keygen --access-control=any-biometry -o key.txt
+Public key: age1se1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak
+```
+
+The **public** key (recipient) is printed on standard output. This is the key you
+need to *encrypt* data, and can be freely distributed.
+
+The **private** key is stored in `key.txt`:
+
+```
+# created: 2023-07-08T19:00:19Z
+# access control: any biometry
+# public key: age1se1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak
+AGE-PLUGIN-SE-1QJPQZLE3SGQHKVYP75X6KYPZPQ3N44RSW0XVMEZ3QYUNTXXQ7UVQTPSPKY6TYQSZDNVLMZYCYSRQRWP
+```
+
+This is the key you need to be able to *decrypt* the data encrypted for the public
+key. You have to keep this key private. 
+
+> ℹ️ The private key is bound to the secure enclave of your machine, so it cannot 
+> be transferred to another machine. This also means that you should take the 
+> necessary precautions, and make sure you also encrypt any long-term data to an
+> alternate backup key.
+
+Using the public key, you can now encrypt data from any machine (even machines
+without a Secure Enclave, or even machines running Linux or Windows):
+
+```
+$ tar cvz ~/data | age -r age1se1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak -o data.tar.gz.age
+```
+
+age will automatically pick up the plugin from your execution path, and detect that it
+needs to use this plugin for encrypting to the specified recipient.
+
+To decrypt the encrypted file, pass the private key as an identity to age 
+(running on the machine with the corresponding Secure Enclave for the private key):
+
+```
+$ age --decrypt -i key.txt -o data.tar.gz data.tar.gz.age
+```
+
+The decrypt operation will now require Touch ID to use the 
+Secure Enclave to decrypt it:
+
+<div align="center">
+<img src="https://raw.githubusercontent.com/remko/age-plugin-se/main/Documentation/img/screenshot-biometry.png" alt="Biometry prompt" width=350/>
+</div>
+
+### Converting `age-plugin-se` recipients to `age-plugin-yubikey` recipients
+
+`age-plugin-se` recipients can be converted to
+[`age-plugin-yubikey`](https://github.com/str4d/age-plugin-yubikey) recipients
+(and vice versa), and be decrypted with the same `age-plugin-se` private key.
+This could be useful if the system on which you want to encrypt your data has
+the `age-plugin-yubikey` plugin installed, but you're unable to install
+`age-plugin-se`. This also obfuscates the fact that your key is protected by
+Apple Secure Enclave.
+
+To convert recipients, you can use the [`ConvertBech32HRP.swift`](https://raw.githubusercontent.com/remko/age-plugin-se/main/Scripts/ConvertBech32HRP.swift) script. 
+For example, to convert the recipient from earlier to a `age-plugin-yubikey` recipient:
+
+```
+$ ./Scripts/ConvertBech32HRP.swift \
+      age1se1qgg72x2qfk9wg3wh0qg9u0v7l5dkq4jx69fv80p6wdus3ftg6flwg5dz2dp \
+      age1yubikey
+age1yubikey1qgg72x2qfk9wg3wh0qg9u0v7l5dkq4jx69fv80p6wdus3ftg6flwgjgtev8
+```
+
+This key can now be used to encrypt data for the same private key:
+```
+$ tar cvz ~/data | age -r age1yubikey1qgg72x2qfk9wg3wh0qg9u0v7l5dkq4jx69fv80p6wdus3ftg6flwgjgtev8
+$ age --decrypt -i key.txt data.tar.gz.age > data.tar.gz
+```
+
+
+
+## Usage
+
+    age-plugin-se keygen [-o OUTPUT] [--access-control ACCESS_CONTROL]
+    age-plugin-se recipients [-o OUTPUT] [-i INPUT]
+
+    The `keygen` subcommand generates a new private key bound to the current 
+    Secure Enclave, with the given access controls, and outputs it to OUTPUT 
+    or standard output.
+
+    The `recipients` subcommand reads an identity file from INPUT or standard 
+    input, and outputs the corresponding recipient(s) to OUTPUT or to standard 
+    output.
+
+
+    Options:
+      --access-control ACCESS_CONTROL   Access control for using the generated key.
+                                    
+            Supported values: none, passcode, 
+              any-biometry, any-biometry-and-passcode, any-biometry-or-passcode,
+              current-biometry, current-biometry-and-passcode
+            Default: any-biometry-or-passcode.             
+
+            When using current biometry, adding or removing a fingerprint stops the
+            key from working. Removing an added fingerprint enables the key again. 
+
+      -o, --output OUTPUT               Write the result to the file at path OUTPUT
+
+      -i, --input INPUT                 Read data from the file at path INPUT
+
+
+
+## Development
+
+Build the plugin
+
+    make
+
+Make sure `.build/debug/age-plugin-se` is in your execution path (or
+softlinked from a folder in your path), so `age` can find the plugin.
+
+### Tests
+
+To run the unit tests:
+
+    make test
+
+To get a coverage report of the unit tests:
+
+    make test COVERAGE=1
+
+Annotated coverage source code can be found in `.build/coverage.html`.
+
+To run a smoke test:
+
+    make smoke-test
+</file>
+
+</files>

@@ -13,7 +13,7 @@ export interface PakConfig {
   useAgeBinary?: boolean;
   ageBinaryPath?: string;
   // Secure Enclave specific settings
-  seAccessControl?: string;
+  seAccessControl?: 'none' | 'passcode' | 'any-biometry' | 'any-biometry-or-passcode' | 'any-biometry-and-passcode' | 'current-biometry' | 'current-biometry-and-passcode';
   seAutoConfirm?: boolean;
 }
 
@@ -72,7 +72,7 @@ export interface FindOptions {
 
 export interface AgePluginConfig {
   type: 'secure-enclave' | 'yubikey' | 'standard';
-  accessControl?: 'any-biometry' | 'any-biometry-or-passcode' | 'passcode' | 'current-biometry';
+  accessControl?: 'none' | 'passcode' | 'any-biometry' | 'any-biometry-or-passcode' | 'any-biometry-and-passcode' | 'current-biometry' | 'current-biometry-and-passcode';
   name?: string;
   pinPolicy?: 'never' | 'once' | 'always';
   touchPolicy?: 'never' | 'always' | 'cached';
@@ -86,6 +86,56 @@ export interface PlatformCapabilities {
   git: boolean;
   age: boolean;
   ageKeygen: boolean;
+}
+
+// Apple Secure Enclave specific types
+export interface SecureEnclaveConfig {
+  accessControl: 'none' | 'passcode' | 'any-biometry' | 'any-biometry-or-passcode' | 'any-biometry-and-passcode' | 'current-biometry' | 'current-biometry-and-passcode';
+  recipientType: 'piv-p256' | 'p256tag';
+  useNative: boolean;
+  backend?: 'native' | 'pure-js' | 'cli' | 'auto';
+  preferNative?: boolean;
+  fallbackToCli?: boolean;
+}
+
+export interface SecureEnclaveKeyPair {
+  identity: string;
+  recipient: string;
+  publicKey: Uint8Array;
+  privateKeyRef: string; // Reference to the SE private key
+  accessControl: string;
+  createdAt: Date;
+}
+
+export interface SecureEnclaveCapabilities {
+  isAvailable: boolean;
+  supportsKeyGeneration: boolean;
+  supportsEncryption: boolean;
+  supportsDecryption: boolean;
+  supportedAccessControls: string[];
+  platform: string;
+  version?: string;
+}
+
+export interface AppleSecureEnclaveAPI {
+  // Key management
+  generateKeyPair(accessControl: string): Promise<SecureEnclaveKeyPair>;
+  loadKeyPair(identity: string): Promise<SecureEnclaveKeyPair>;
+  deleteKeyPair(identity: string): Promise<boolean>;
+  
+  // Cryptographic operations
+  encrypt(data: Uint8Array, recipient: string): Promise<Uint8Array>;
+  decrypt(ciphertext: Uint8Array, privateKeyRef: string): Promise<Uint8Array>;
+  
+  // Utility methods
+  isAvailable(): Promise<boolean>;
+  getCapabilities(): Promise<SecureEnclaveCapabilities>;
+  validateAccessControl(accessControl: string): boolean;
+  
+  // Age compatibility
+  identityToRecipient(identity: string): Promise<string>;
+  recipientToAgeFormat(publicKey: Uint8Array, type: 'piv-p256' | 'p256tag'): string;
+  parseAgeIdentity(identity: string): { data: Uint8Array; accessControl: string };
 }
 
 export interface PasswordManagerOptions {

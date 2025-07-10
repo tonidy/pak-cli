@@ -34,13 +34,14 @@ export class PasswordManager {
   private fileManager: FileManager;
   private randomGenerator: RandomGenerator;
   private userInterface: UserInterface;
-  
+
   private paDir: string;
   private identitiesFile: string;
   private recipientsFile: string;
   private passwordsDir: string;
   private gitEnabled: boolean = false;
   private initialized: boolean = false;
+  private explicitlyDisabledAgeBinary: boolean = false;
 
   // Version information
   private static readonly PA_VERSION = '__VERSION__';
@@ -60,6 +61,12 @@ export class PasswordManager {
       // Ignore config file errors
     }
     
+    // Check if user explicitly disabled age binary
+    this.explicitlyDisabledAgeBinary = 
+      (configFromFile as any)?.useAgeBinary === false || 
+      process.env.PA_USE_AGE_BINARY === '0' ||
+      options.config?.useAgeBinary === false;
+    
     this.config = {
       paDir: process.env.PA_DIR || path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'pa'),
       paLength: parseInt(process.env.PA_LENGTH || '50'),
@@ -71,7 +78,7 @@ export class PasswordManager {
       ...(process.env.PA_USE_AGE_BINARY && { useAgeBinary: process.env.PA_USE_AGE_BINARY === '1' }),
       ...(process.env.PA_AGE_BINARY_PATH && { ageBinaryPath: process.env.PA_AGE_BINARY_PATH }),
       // Secure Enclave configuration
-      ...(process.env.PA_SE_ACCESS_CONTROL && { seAccessControl: process.env.PA_SE_ACCESS_CONTROL }),
+      ...(process.env.PA_SE_ACCESS_CONTROL && this.validateSeAccessControl(process.env.PA_SE_ACCESS_CONTROL) && { seAccessControl: process.env.PA_SE_ACCESS_CONTROL as any }),
       ...(process.env.PA_SE_AUTO_CONFIRM && { seAutoConfirm: process.env.PA_SE_AUTO_CONFIRM === '1' }),
       // Apply config from file (merges with defaults and env vars)
       ...configFromFile,
@@ -597,12 +604,36 @@ export class PasswordManager {
     }
 
     // Auto-detect if binary usage is needed for existing keys
+    // BUT respect explicit user configuration
     if (!this.config.useAgeBinary && hasIdentity) {
       try {
         const identityContent = await this.fileManager.read(this.identitiesFile);
         if (identityContent.includes('AGE-PLUGIN-SE-') || identityContent.includes('AGE-PLUGIN-YUBIKEY-')) {
-          console.log('Detected age plugin identities, auto-enabling age binary');
-          this.config.useAgeBinary = true;
+          // Check if user explicitly disabled age binary
+          if (this.explicitlyDisabledAgeBinary) {
+            console.log('Detected age plugin identities, but useAgeBinary explicitly set to false - using pure JS SE implementation');
+          } else {
+            console.log('Detected age plugin identities, auto-enabling age binary');
+            this.config.useAgeBinary = true;
+          }
+        }
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    // Validate that age-plugin-se is available when using age binary with SE identities
+    if (this.config.useAgeBinary && hasIdentity) {
+      try {
+        const identityContent = await this.fileManager.read(this.identitiesFile);
+        if (identityContent.includes('AGE-PLUGIN-SE-')) {
+          const capabilities = await this.getPlatformCapabilities();
+          if (!capabilities.secureEnclave) {
+            console.warn('⚠️  Warning: Found Secure Enclave identities but age-plugin-se is not installed!');
+            console.warn('   This will cause decryption to fail when using age binary.');
+            console.warn('   Install age-plugin-se with: brew install age-plugin-se');
+            console.warn('   Or set useAgeBinary to false to use pure JS SE implementation.');
+          }
         }
       } catch {
         // Ignore errors
@@ -784,6 +815,20 @@ export class PasswordManager {
       default:
         return '/tmp';
     }
+  }
+
+  private validateSeAccessControl(accessControl: string): boolean {
+    const validControls = [
+      'none',
+      'passcode',
+      'any-biometry',
+      'any-biometry-or-passcode',
+      'any-biometry-and-passcode',
+      'current-biometry',
+      'current-biometry-and-passcode'
+    ];
+    
+    return validControls.includes(accessControl);
   }
 
   private getGitInfo(): GitInfo {
