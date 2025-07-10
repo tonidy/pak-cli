@@ -1,0 +1,55 @@
+# Build artifacts
+build/
+.build/
+dist/
+out/
+
+# Node.js dependencies
+node_modules/
+
+# Test executables (compiled binaries)
+encrypt_test
+decrypt_test
+keygen_test
+minimal_test
+
+# Compiled binaries and object files
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.exe
+*.a
+*.lib
+
+# Debug files
+*.pdb
+*.dSYM/
+*.dSYM
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Xcode build files
+DerivedData/
+*.xcworkspace
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+
+# CMake build files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Temporary files
+*.tmp
+*.temp
+*.log 

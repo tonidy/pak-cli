@@ -1,0 +1,31 @@
+{
+  "name": "@kdbx/secure-enclave-native",
+  "version": "0.1.0",
+  "description": "Native Secure Enclave addon for Node.js using Swift",
+  "main": "index.js",
+  "scripts": {
+    "build": "node-gyp configure && node-gyp build",
+    "rebuild": "node-gyp rebuild",
+    "clean": "node-gyp clean",
+    "configure": "node-gyp configure",
+    "build-swift": "cd SecureEnclaveSwift && swift build -c release",
+    "install": "npm run build-swift && npm run build"
+  },
+  "gypfile": true,
+  "dependencies": {
+    "node-addon-api": "^6.0.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+} 

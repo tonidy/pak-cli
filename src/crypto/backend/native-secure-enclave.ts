@@ -1,38 +1,32 @@
 /**
  * Native Apple Secure Enclave Implementation
- * Uses Node.js native modules for direct Security Framework access
+ * Uses Swift-based native Node.js addon for direct Security Framework access
  */
 
+import * as path from 'path';
 import { SecureEnclaveKeyPair, SecureEnclaveCapabilities, SecureEnclaveConfig, AppleSecureEnclaveAPI } from '../../types';
 
-// This would require a native Node.js module compiled with Objective-C/Swift
-// For now, we'll define the interface and show how it would work
+// Load the native addon
+let nativeAddon: any;
 
-interface NativeSecureEnclaveBindings {
-  isAvailable(): boolean;
-  generateKeyPair(accessControl: string): Promise<{
-    privateKeyData: Buffer;
-    publicKeyData: Buffer;
-    keyTag: string;
-  }>;
-  encrypt(data: Buffer, publicKey: Buffer): Promise<Buffer>;
-  decrypt(ciphertext: Buffer, privateKeyData: Buffer): Promise<Buffer>;
-  deleteKey(keyTag: string): Promise<boolean>;
+try {
+  // Try to load the native addon from the native directory
+  const nativeModulePath = path.join(__dirname, '../../../native');
+  nativeAddon = require(nativeModulePath);
+} catch (error) {
+  console.warn('Failed to load native Secure Enclave addon:', error instanceof Error ? error.message : String(error));
+  nativeAddon = null;
 }
 
 export class NativeSecureEnclave implements AppleSecureEnclaveAPI {
-  private bindings: NativeSecureEnclaveBindings;
   private config: SecureEnclaveConfig;
 
   constructor(config: SecureEnclaveConfig) {
     this.config = config;
     
-    // This would load the native module
-    // const bindings = require('./native/secure-enclave.node');
-    // this.bindings = bindings;
-    
-    // For now, throw an error indicating native module is needed
-    throw new Error('Native Secure Enclave module not yet implemented. Requires native Node.js module.');
+    if (!nativeAddon) {
+      throw new Error('Native Secure Enclave addon not available. Please build the native module first.');
+    }
   }
 
   async isAvailable(): Promise<boolean> {
@@ -40,8 +34,12 @@ export class NativeSecureEnclave implements AppleSecureEnclaveAPI {
       return false;
     }
     
+    if (!nativeAddon) {
+      return false;
+    }
+    
     try {
-      return this.bindings.isAvailable();
+      return nativeAddon.isAvailable();
     } catch (error) {
       return false;
     }
@@ -68,17 +66,17 @@ export class NativeSecureEnclave implements AppleSecureEnclaveAPI {
   }
 
   async generateKeyPair(accessControl: string): Promise<SecureEnclaveKeyPair> {
-    const result = await this.bindings.generateKeyPair(accessControl);
+    const result = await nativeAddon.generateKeyPair(accessControl);
     
     // Convert to age format
-    const recipient = this.publicKeyToAgeRecipient(result.publicKeyData);
-    const identity = this.privateKeyToAgeIdentity(result.privateKeyData);
+    const recipient = this.publicKeyToAgeRecipient(result.publicKey);
+    const identity = this.privateKeyToAgeIdentity(result.privateKey);
     
     return {
       identity,
       recipient,
-      publicKey: result.publicKeyData,
-      privateKeyRef: result.keyTag,
+      publicKey: result.publicKey,
+      privateKeyRef: result.privateKey.toString('base64'), // Use base64 as reference
       accessControl,
       createdAt: new Date()
     };
@@ -107,15 +105,14 @@ export class NativeSecureEnclave implements AppleSecureEnclaveAPI {
 
   async encrypt(data: Uint8Array, recipient: string): Promise<Uint8Array> {
     const publicKeyData = this.parseAgeRecipient(recipient);
-    const result = await this.bindings.encrypt(Buffer.from(data), publicKeyData);
+    const result = await nativeAddon.encrypt(Buffer.from(data), publicKeyData);
     return new Uint8Array(result);
   }
 
   async decrypt(ciphertext: Uint8Array, privateKeyRef: string): Promise<Uint8Array> {
-    // In a real implementation, privateKeyRef would be used to access the SE key
-    // For now, we'll simulate this
+    // privateKeyRef contains the base64-encoded private key data
     const privateKeyData = Buffer.from(privateKeyRef, 'base64');
-    const result = await this.bindings.decrypt(Buffer.from(ciphertext), privateKeyData);
+    const result = await nativeAddon.decrypt(Buffer.from(ciphertext), privateKeyData);
     return new Uint8Array(result);
   }
 
