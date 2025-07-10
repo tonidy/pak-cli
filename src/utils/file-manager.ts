@@ -46,6 +46,19 @@ export class FileManager implements FileSystem {
   }
 
   /**
+   * Write binary data to a file
+   */
+  async writeBinary(path: string, data: Uint8Array): Promise<void> {
+    const fs = await import('fs/promises');
+    
+    try {
+      await fs.writeFile(path, data);
+    } catch (error) {
+      throw new Error(`Failed to write binary file ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
    * Create a directory (recursively)
    */
   async mkdir(path: string): Promise<void> {

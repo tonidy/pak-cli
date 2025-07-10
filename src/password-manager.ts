@@ -6,6 +6,7 @@
 
 import * as path from 'path';
 import * as os from 'os';
+import * as fs from 'fs';
 import { 
   PakConfig, 
   VersionInfo, 
@@ -47,6 +48,18 @@ export class PasswordManager {
   private static readonly PA_COMMIT = '__COMMIT__';
 
   constructor(options: PasswordManagerOptions = {}) {
+    // Load config from config.json if it exists
+    let configFromFile = {};
+    try {
+      const configPath = path.join(process.cwd(), 'config.json');
+      if (fs.existsSync(configPath)) {
+        const configContent = fs.readFileSync(configPath, 'utf8');
+        configFromFile = JSON.parse(configContent);
+      }
+    } catch (error) {
+      // Ignore config file errors
+    }
+    
     this.config = {
       paDir: process.env.PA_DIR || path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'pa'),
       paLength: parseInt(process.env.PA_LENGTH || '50'),
@@ -54,6 +67,15 @@ export class PasswordManager {
       paNoGit: process.env.PA_NOGIT !== undefined,
       paNoKeyring: process.env.PA_NO_KEYRING === '1',
       editor: process.env.EDITOR || 'vi',
+      // Age binary configuration
+      ...(process.env.PA_USE_AGE_BINARY && { useAgeBinary: process.env.PA_USE_AGE_BINARY === '1' }),
+      ...(process.env.PA_AGE_BINARY_PATH && { ageBinaryPath: process.env.PA_AGE_BINARY_PATH }),
+      // Secure Enclave configuration
+      ...(process.env.PA_SE_ACCESS_CONTROL && { seAccessControl: process.env.PA_SE_ACCESS_CONTROL }),
+      ...(process.env.PA_SE_AUTO_CONFIRM && { seAutoConfirm: process.env.PA_SE_AUTO_CONFIRM === '1' }),
+      // Apply config from file (merges with defaults and env vars)
+      ...configFromFile,
+      // Apply custom config (highest priority)
       ...options.config
     };
 
@@ -166,7 +188,7 @@ export class PasswordManager {
     // Encrypt and save password
     try {
       const encryptedData = await this.ageManager.encrypt(password);
-      await this.fileManager.write(passwordFile, Buffer.from(encryptedData).toString());
+      await this.fileManager.writeBinary(passwordFile, encryptedData);
       console.log(`saved '${name}' to the store.`);
     } catch (error) {
       throw new PaError(`couldn't encrypt ${name}.age`);
@@ -190,8 +212,7 @@ export class PasswordManager {
     }
 
     try {
-      const encryptedData = await this.fileManager.read(passwordFile);
-      return await this.decryptWithKey(Buffer.from(encryptedData));
+      return await this.ageManager.decryptByPath(passwordFile);
     } catch (error) {
       throw new PaError(`couldn't decrypt ${name}.age`);
     }
@@ -274,7 +295,7 @@ export class PasswordManager {
     try {
       // Decrypt existing password to temp file
       if (!isNew) {
-        const decrypted = await this.show(name);
+        const decrypted = await this.ageManager.decryptByPath(passwordFile);
         await this.fileManager.write(tmpFile, decrypted);
       }
 
@@ -311,7 +332,7 @@ export class PasswordManager {
 
         // Encrypt and save
         const encryptedData = await this.ageManager.encrypt(content);
-        await this.fileManager.write(passwordFile, Buffer.from(encryptedData).toString());
+        await this.fileManager.writeBinary(passwordFile, encryptedData);
 
         if (isNew) {
           console.log(`saved '${name}' to the store.`);
@@ -441,6 +462,61 @@ export class PasswordManager {
   }
 
   /**
+   * Get detailed information about Secure Enclave support
+   */
+  async getSecureEnclaveInfo(): Promise<void> {
+    const seInfo = await this.ageManager.getSecureEnclaveInfo();
+    
+    console.log('Secure Enclave Information:');
+    console.log(`  Available: ${seInfo.available ? '✓' : '✗'}`);
+    console.log(`  Plugin Installed: ${seInfo.plugin ? '✓' : '✗'}`);
+    console.log(`  Platform Support: ${seInfo.platform ? '✓' : '✗'}`);
+    
+    if (seInfo.version) {
+      console.log(`  macOS Version: ${seInfo.version}`);
+    }
+    
+    console.log(`  Status: ${seInfo.message}`);
+    
+    // Show current key information if available
+    if (seInfo.available && await this.fileManager.exists(this.identitiesFile)) {
+      try {
+        const recipients = await this.ageManager.getSecureEnclaveRecipients(this.identitiesFile);
+        if (recipients.length > 0) {
+          console.log(`  Current Public Key: ${recipients[0]}`);
+          
+          // Show YubiKey equivalent if requested
+          try {
+            const yubiRecipient = this.ageManager.convertSecureEnclaveToYubikey(recipients[0]);
+            console.log(`  YubiKey Equivalent: ${yubiRecipient}`);
+          } catch {
+            // Ignore conversion errors
+          }
+        }
+      } catch (error) {
+        console.log(`  Current Key: Error reading (${error})`);
+      }
+    }
+  }
+
+  /**
+   * Convert recipients between Secure Enclave and YubiKey formats
+   */
+  async convertRecipient(recipient: string, targetFormat: 'se' | 'yubikey'): Promise<string> {
+    await this.ensureInitialized();
+    
+    try {
+      if (targetFormat === 'yubikey') {
+        return this.ageManager.convertSecureEnclaveToYubikey(recipient);
+      } else {
+        return this.ageManager.convertYubikeyToSecureEnclave(recipient);
+      }
+    } catch (error) {
+      throw new PaError(`Failed to convert recipient: ${error}`);
+    }
+  }
+
+  /**
    * Get platform capabilities
    */
   async getPlatformCapabilities(): Promise<PlatformCapabilities> {
@@ -502,11 +578,34 @@ export class PasswordManager {
       const capabilities = await this.getPlatformCapabilities();
       
       if (capabilities.secureEnclave) {
+        // Auto-enable age binary for Secure Enclave support
+        if (!this.config.useAgeBinary) {
+          console.log('Auto-enabling age binary for Secure Enclave support');
+          this.config.useAgeBinary = true;
+        }
         await this.initializeSecureEnclave();
       } else if (capabilities.yubikey) {
+        // Auto-enable age binary for YubiKey support  
+        if (!this.config.useAgeBinary) {
+          console.log('Auto-enabling age binary for YubiKey support');
+          this.config.useAgeBinary = true;
+        }
         await this.initializeYubikey();
       } else {
         await this.initializeStandardKeys();
+      }
+    }
+
+    // Auto-detect if binary usage is needed for existing keys
+    if (!this.config.useAgeBinary && hasIdentity) {
+      try {
+        const identityContent = await this.fileManager.read(this.identitiesFile);
+        if (identityContent.includes('AGE-PLUGIN-SE-') || identityContent.includes('AGE-PLUGIN-YUBIKEY-')) {
+          console.log('Detected age plugin identities, auto-enabling age binary');
+          this.config.useAgeBinary = true;
+        }
+      } catch {
+        // Ignore errors
       }
     }
 
@@ -529,38 +628,76 @@ export class PasswordManager {
   }
 
   private async initializeSecureEnclave(): Promise<void> {
-    const confirmed = await this.userInterface.confirm('generate secure enclave identity?');
+    // Check detailed Secure Enclave support
+    const seInfo = await this.ageManager.getSecureEnclaveInfo();
+    
+    if (!seInfo.available) {
+      console.log(`Secure Enclave not available: ${seInfo.message}`);
+      if (!seInfo.plugin) {
+        console.log('Install age-plugin-se with: brew install age-plugin-se');
+      }
+      return;
+    }
+    
+    console.log(`✓ ${seInfo.message}`);
+    
+    // Check for environment variable configuration
+    const envAccessControl = this.config.seAccessControl;
+    const envAutoConfirm = this.config.seAutoConfirm;
+    
+    const confirmed = envAutoConfirm || await this.userInterface.confirm('generate secure enclave identity?');
     if (!confirmed) return;
 
-    console.log('Choose access control for Secure Enclave key:');
-    console.log('1) any-biometry (Touch ID/Face ID)');
-    console.log('2) any-biometry-or-passcode (Touch ID/Face ID or device passcode)');
-    console.log('3) passcode (device passcode only)');
-    console.log('4) current-biometry (current enrolled biometrics only)');
+    let accessControl: string;
     
-    const choice = await this.userInterface.prompt('Enter choice [1-4, default: 2]');
-    
-    const accessControlMap: Record<string, string> = {
-      '1': 'any-biometry',
-      '2': 'any-biometry-or-passcode',
-      '3': 'passcode',
-      '4': 'current-biometry'
-    };
-    
-    const accessControl = accessControlMap[choice] || 'any-biometry-or-passcode';
-    
-    const { execSync } = await import('child_process');
+    if (envAccessControl) {
+      if (this.ageManager.validateAccessControl(envAccessControl)) {
+        accessControl = envAccessControl;
+        console.log(`Using access control from environment: ${accessControl}`);
+      } else {
+        console.log(`Invalid access control in PA_SE_ACCESS_CONTROL: ${envAccessControl}`);
+        console.log('Valid options: any-biometry, any-biometry-or-passcode, passcode, current-biometry');
+        return;
+      }
+    } else {
+      console.log('Choose access control for Secure Enclave key:');
+      console.log('1) any-biometry (Touch ID/Face ID)');
+      console.log('2) any-biometry-or-passcode (Touch ID/Face ID or device passcode)');
+      console.log('3) passcode (device passcode only)');
+      console.log('4) current-biometry (current enrolled biometrics only)');
+      console.log('5) current-biometry-and-passcode (current biometrics AND passcode)');
+      
+      const choice = await this.userInterface.prompt('Enter choice [1-5, default: 2]');
+      
+      const accessControlMap: Record<string, string> = {
+        '1': 'any-biometry',
+        '2': 'any-biometry-or-passcode',
+        '3': 'passcode',
+        '4': 'current-biometry',
+        '5': 'current-biometry-and-passcode'
+      };
+      
+      accessControl = accessControlMap[choice] || 'any-biometry-or-passcode';
+    }
     
     try {
-      execSync(`age-plugin-se keygen --access-control="${accessControl}" -o "${this.identitiesFile}"`, {
-        stdio: 'inherit'
-      });
+      console.log(`Generating Secure Enclave identity with access control: ${accessControl}`);
       
-      execSync(`age-plugin-se recipients -i "${this.identitiesFile}" -o "${this.recipientsFile}"`, {
-        stdio: 'inherit'
-      });
+      await this.ageManager.generateSecureEnclaveIdentity(accessControl, this.identitiesFile);
+      
+      const recipients = await this.ageManager.getSecureEnclaveRecipients(this.identitiesFile);
+      await this.fileManager.write(this.recipientsFile, recipients.join('\n') + '\n');
+      
+      console.log('✓ Secure Enclave identity generated successfully');
+      console.log('✓ Recipients file created');
+      
+      // Show the public key
+      if (recipients.length > 0) {
+        console.log(`Public key: ${recipients[0]}`);
+      }
+      
     } catch (error) {
-      throw new PaError('failed to generate Secure Enclave identity file');
+      throw new PaError(`failed to generate Secure Enclave identity: ${error}`);
     }
   }
 
@@ -631,40 +768,6 @@ export class PasswordManager {
       const recipient = await this.ageManager.identityToRecipient(identity);
       await this.fileManager.write(this.recipientsFile, recipient);
     }
-  }
-
-  private async decryptWithKey(encryptedData: Uint8Array): Promise<string> {
-    // First try without passphrase using loaded identities
-    try {
-      return await this.ageManager.decrypt(encryptedData);
-    } catch {
-      // Continue to try with passphrase
-    }
-
-    // Try with stored passphrase if available
-    const osType = this.platformDetector.detectOS();
-    if (osType !== 'unknown' && !this.config.paNoKeyring) {
-      try {
-        const passphrase = await this.credentialManager.retrieve(
-          'pa-encryption-key',
-          process.env.USER || 'user'
-        );
-        
-        if (passphrase) {
-          return await this.ageManager.decryptWithPassphrase(encryptedData, passphrase);
-        }
-      } catch {
-        // Continue to prompt for passphrase
-      }
-    }
-
-    // Prompt for passphrase
-    const userPassphrase = await this.userInterface.prompt('Enter passphrase for encryption key', true);
-    if (!userPassphrase) {
-      throw new PaError('no passphrase provided');
-    }
-
-    return await this.ageManager.decryptWithPassphrase(encryptedData, userPassphrase);
   }
 
   private getTempDirectory(): string {

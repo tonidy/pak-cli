@@ -174,6 +174,48 @@ program
     }
   });
 
+// Secure Enclave info command
+program
+  .command('se-info')
+  .description('Show Secure Enclave support information')
+  .action(async () => {
+    try {
+      const pm = new PasswordManager();
+      await pm.getSecureEnclaveInfo();
+    } catch (error) {
+      if (error instanceof PaError) {
+        console.error(`pa: ${error.message}.`);
+      } else {
+        console.error(`pa: ${error}.`);
+      }
+      process.exit(1);
+    }
+  });
+
+// Convert recipient command
+program
+  .command('convert <recipient> <format>')
+  .description('Convert recipient between Secure Enclave and YubiKey formats')
+  .action(async (recipient: string, format: string) => {
+    try {
+      const pm = new PasswordManager();
+      
+      if (format !== 'se' && format !== 'yubikey') {
+        throw new PaError(`invalid format '${format}'. Use 'se' or 'yubikey'`);
+      }
+      
+      const convertedRecipient = await pm.convertRecipient(recipient, format as 'se' | 'yubikey');
+      console.log(convertedRecipient);
+    } catch (error) {
+      if (error instanceof PaError) {
+        console.error(`pa: ${error.message}.`);
+      } else {
+        console.error(`pa: ${error}.`);
+      }
+      process.exit(1);
+    }
+  });
+
 // Version command
 program
   .command('version')
@@ -235,6 +277,8 @@ program.configureHelp({
     [l]ist        - List all entries.
     [s]how [name] - Show password for an entry.
     [v]ersion     - Show version information.
+    se-info       - Show Secure Enclave support information.
+    convert <recipient> <format> - Convert recipient between 'se' and 'yubikey' formats.
 
   env vars:
     data directory:   export PA_DIR=~/.local/share/pa
@@ -243,6 +287,10 @@ program.configureHelp({
     disable tracking: export PA_NOGIT=
     disable keyring:  export PA_NO_KEYRING=1
     editor command:   export EDITOR=nano
+
+  secure enclave env vars:
+    access control:   export PA_SE_ACCESS_CONTROL=any-biometry-or-passcode
+    auto confirm:     export PA_SE_AUTO_CONFIRM=1
 
   platform support:
     - macOS: Keychain integration, Secure Enclave (age-plugin-se)

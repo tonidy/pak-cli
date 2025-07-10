@@ -9,6 +9,12 @@ export interface PakConfig {
   paNoGit?: boolean;
   paNoKeyring?: boolean;
   editor?: string;
+  // Age binary options
+  useAgeBinary?: boolean;
+  ageBinaryPath?: string;
+  // Secure Enclave specific settings
+  seAccessControl?: string;
+  seAutoConfirm?: boolean;
 }
 
 export interface VersionInfo {
