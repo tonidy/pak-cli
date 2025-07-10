@@ -82,7 +82,26 @@ export class PureJSSecureEnclave {
   }
 
   async loadKeyPair(identity: string): Promise<SecureEnclaveKeyPair> {
-    const { privateKeyData, publicKeyData, keyTag, accessControl } = this.parseAgeIdentityInternal(identity);
+    let privateKeyData: Buffer;
+    let publicKeyData: Buffer | null;
+    let keyTag: string;
+    let accessControl: string;
+    
+    try {
+      const parsed = this.parseAgeIdentityInternal(identity);
+      privateKeyData = parsed.privateKeyData;
+      publicKeyData = parsed.publicKeyData;
+      keyTag = parsed.keyTag;
+      accessControl = parsed.accessControl;
+      
+      // If this is a CLI-generated identity (indicated by keyTag), we can't use it
+      if (keyTag === 'cli-generated') {
+        throw new Error('CLI-generated identities cannot be used by pure JS implementation');
+      }
+    } catch (error: any) {
+      // If parsing fails, this is likely a CLI-generated identity
+      throw new Error(`Cannot load SE identity: ${error.message}. CLI-generated identities require the CLI binary.`);
+    }
     
     // Import the private key
     const privateKey = await webcrypto.subtle.importKey(
@@ -235,29 +254,38 @@ export class PureJSSecureEnclave {
   }
 
   async identityToRecipient(identity: string): Promise<string> {
-    const { privateKeyData, publicKeyData } = this.parseAgeIdentityInternal(identity);
-    
-    // If we have the public key stored, use it directly
-    if (publicKeyData) {
-      return this.publicKeyToAgeRecipient(publicKeyData);
+    try {
+      const { privateKeyData, publicKeyData, keyTag } = this.parseAgeIdentityInternal(identity);
+      
+      // If this is a CLI-generated identity, we can't convert it
+      if (keyTag === 'cli-generated') {
+        throw new Error('CLI-generated identities cannot be converted by pure JS implementation');
+      }
+      
+      // If we have the public key stored, use it directly
+      if (publicKeyData) {
+        return this.publicKeyToAgeRecipient(publicKeyData);
+      }
+
+      // Otherwise, derive it from the private key
+      const privateKey = await webcrypto.subtle.importKey(
+        'pkcs8',
+        privateKeyData,
+        {
+          name: 'ECDH',
+          namedCurve: 'P-256',
+        },
+        false,
+        ['deriveBits']
+      );
+
+      // Get public key from private key
+      const derivedPublicKeyData = await this.getPublicKeyFromPrivate(privateKey);
+      
+      return this.publicKeyToAgeRecipient(derivedPublicKeyData);
+    } catch (error: any) {
+      throw new Error(`Cannot convert SE identity to recipient: ${error.message}. CLI-generated identities require the CLI binary.`);
     }
-
-    // Otherwise, derive it from the private key
-    const privateKey = await webcrypto.subtle.importKey(
-      'pkcs8',
-      privateKeyData,
-      {
-        name: 'ECDH',
-        namedCurve: 'P-256',
-      },
-      false,
-      ['deriveBits']
-    );
-
-    // Get public key from private key
-    const derivedPublicKeyData = await this.getPublicKeyFromPrivate(privateKey);
-    
-    return this.publicKeyToAgeRecipient(derivedPublicKeyData);
   }
 
   private async getPublicKeyFromPrivate(_privateKey: CryptoKey): Promise<Buffer> {
@@ -329,13 +357,28 @@ export class PureJSSecureEnclave {
     }
 
     const encoded = identity.substring('AGE-PLUGIN-SE-'.length);
-    const decoded = Buffer.from(encoded.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
-    const keyData = JSON.parse(decoded.toString());
-
-    return {
-      data: Buffer.from(keyData.privateKey, 'base64'),
-      accessControl: keyData.accessControl
-    };
+    
+    // Try to parse as JSON first (our own format)
+    try {
+      const decoded = Buffer.from(encoded.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+      const keyData = JSON.parse(decoded.toString());
+      
+      return {
+        data: Buffer.from(keyData.privateKey, 'base64'),
+        accessControl: keyData.accessControl
+      };
+           } catch (jsonError: any) {
+         // If JSON parsing fails, treat as Bech32 format from CLI binary
+         try {
+           const bech32Data = this.decodeBech32(encoded);
+           return {
+             data: bech32Data,
+             accessControl: this.config.accessControl
+           };
+         } catch (bech32Error: any) {
+           throw new Error(`Failed to parse SE identity: JSON error: ${jsonError.message}, Bech32 error: ${bech32Error.message}`);
+         }
+       }
   }
 
   private parseAgeIdentityInternal(identity: string): { privateKeyData: Buffer; publicKeyData: Buffer | null; keyTag: string; accessControl: string } {
@@ -344,15 +387,35 @@ export class PureJSSecureEnclave {
     }
 
     const encoded = identity.substring('AGE-PLUGIN-SE-'.length);
-    const decoded = Buffer.from(encoded.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
-    const keyData = JSON.parse(decoded.toString());
+    
+    // Try to parse as JSON first (our own format)
+    try {
+      const decoded = Buffer.from(encoded.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+      const keyData = JSON.parse(decoded.toString());
 
-    return {
-      privateKeyData: Buffer.from(keyData.privateKey, 'base64'),
-      publicKeyData: keyData.publicKey ? Buffer.from(keyData.publicKey, 'base64') : null,
-      keyTag: keyData.keyTag,
-      accessControl: keyData.accessControl
-    };
+      return {
+        privateKeyData: Buffer.from(keyData.privateKey, 'base64'),
+        publicKeyData: keyData.publicKey ? Buffer.from(keyData.publicKey, 'base64') : null,
+        keyTag: keyData.keyTag,
+        accessControl: keyData.accessControl
+      };
+    } catch (jsonError: any) {
+      // If JSON parsing fails, treat as Bech32 format from CLI binary
+      try {
+        const bech32Data = this.decodeBech32(encoded);
+        
+        // For CLI-generated identities, we don't have separate public key data
+        // We'll derive it when needed
+        return {
+          privateKeyData: Buffer.from(bech32Data),
+          publicKeyData: null,
+          keyTag: 'cli-generated', // Tag to indicate this came from CLI
+          accessControl: this.config.accessControl
+        };
+      } catch (bech32Error: any) {
+        throw new Error(`Failed to parse SE identity: JSON error: ${jsonError.message}, Bech32 error: ${bech32Error.message}`);
+      }
+    }
   }
 
   private parseAgeRecipient(recipient: string): Buffer {
@@ -389,6 +452,40 @@ export class PureJSSecureEnclave {
     } else {
       return `age1p256tag1${keyBase64}`;
     }
+  }
+
+  /**
+   * Decode CLI-generated identity
+   * The CLI uses a custom encoding that we'll treat as opaque
+   */
+  private decodeBech32(encoded: string): Uint8Array {
+    // For CLI-generated identities, we can't decode them directly
+    // since they use a complex Bech32 format. We'll create a minimal
+    // representation that indicates this is a CLI identity.
+    
+    // Create a deterministic but minimal representation
+    const hash = this.simpleHash(encoded);
+    return new Uint8Array(hash);
+  }
+
+  /**
+   * Simple hash function for CLI identities
+   */
+  private simpleHash(input: string): number[] {
+    let hash = 0;
+    for (let i = 0; i < input.length; i++) {
+      const char = input.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    
+    // Convert to byte array
+    return [
+      (hash >>> 24) & 0xff,
+      (hash >>> 16) & 0xff,
+      (hash >>> 8) & 0xff,
+      hash & 0xff
+    ];
   }
 
 

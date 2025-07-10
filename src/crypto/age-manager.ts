@@ -118,13 +118,20 @@ export class AgeManager {
       }
     }
     
-    // Check if binary usage is forced or needed for plugins
+    // Only use CLI when explicitly configured or when we don't have SE support
+    if (this.config.useAgeBinary) {
+      // Use command-line age when explicitly configured
+      return await this.encryptWithCLI(data, recipientsToUse);
+    }
+    
+    // Check if we have plugin recipients but no native SE support
     const hasPluginRecipients = recipientsToUse.some(r => 
       r.startsWith('age1se1') || r.startsWith('age1yubikey1')
     );
     
-    if (this.config.useAgeBinary || hasPluginRecipients) {
-      // Use command-line age for plugin support or when explicitly configured
+    // Only fall back to CLI if we don't have native SE support AND we have plugin recipients
+    if (!this.secureEnclave && hasPluginRecipients) {
+      // Use command-line age for plugin support when native SE is not available
       return await this.encryptWithCLI(data, recipientsToUse);
     }
     
@@ -176,12 +183,18 @@ export class AgeManager {
           return new TextDecoder().decode(decrypted);
         }
       } catch (error) {
-        // Fall back to CLI on error
-        console.warn('SE native decryption failed, falling back to CLI:', error);
+        // Fall back to CLI on error (expected for CLI-generated identities)
+        console.log('SE native decryption failed, falling back to CLI (CLI-generated identities cannot be used by pure JS implementation)');
       }
     }
     
-    // Check if binary usage is forced or needed for plugins
+    // Only use CLI when explicitly configured or when we don't have SE support
+    if (this.config.useAgeBinary) {
+      // Use command-line age when explicitly configured
+      return await this.decryptWithCLI(ciphertext, identitiesToUse);
+    }
+    
+    // Check if we have plugin identities but no native SE support
     const hasPluginIdentities = identitiesToUse.some(i => 
       i.includes('AGE-PLUGIN-SE-') || i.includes('AGE-PLUGIN-YUBIKEY-')
     );
@@ -190,8 +203,9 @@ export class AgeManager {
     const ciphertextString = new TextDecoder().decode(ciphertext.slice(0, 200));
     const hasPluginCiphertext = ciphertextString.includes('piv-p256') || ciphertextString.includes('yubikey');
     
-    if (this.config.useAgeBinary || hasPluginIdentities || hasPluginCiphertext) {
-      // Use command-line age for plugin support or when explicitly configured
+    // Only fall back to CLI if we don't have native SE support AND we have plugin content
+    if (!this.secureEnclave && (hasPluginIdentities || hasPluginCiphertext)) {
+      // Use command-line age for plugin support when native SE is not available
       return await this.decryptWithCLI(ciphertext, identitiesToUse);
     }
     
@@ -242,15 +256,45 @@ export class AgeManager {
       throw new Error('No identities specified for decryption');
     }
     
-    // Check if binary usage is forced or needed for plugins
+    // Check if we have SE identities and can use native SE
+    const hasSeIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-SE-'));
+    const hasOtherPluginIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-YUBIKEY-'));
+    
+    // Use native SE decryption if available and we have SE identities
+    if (this.secureEnclave && hasSeIdentities && !hasOtherPluginIdentities && !this.config.useAgeBinary) {
+      try {
+        // For SE-only decryption, use native SE implementation
+        const seIdentities = identitiesToUse.filter(i => i.includes('AGE-PLUGIN-SE-'));
+        const standardIdentities = identitiesToUse.filter(i => !i.includes('AGE-PLUGIN-SE-'));
+        
+        if (seIdentities.length > 0 && standardIdentities.length === 0) {
+          // Pure SE decryption - use native SE - read file and decrypt
+          const fs = await import('fs');
+          const ciphertext = fs.readFileSync(filePath);
+          const keyPair = await this.secureEnclave.loadKeyPair(seIdentities[0]);
+          const decrypted = await this.secureEnclave.decrypt(ciphertext, keyPair.privateKeyRef);
+          return new TextDecoder().decode(decrypted);
+        }
+      } catch (error) {
+        // Fall back to CLI on error (expected for CLI-generated identities)
+        console.log('SE native decryption failed, falling back to CLI (CLI-generated identities cannot be used by pure JS implementation)');
+      }
+    }
+    
+    // Only use CLI when explicitly configured or when we don't have SE support
+    if (this.config.useAgeBinary) {
+      // Use command-line age when explicitly configured
+      return await this.decryptFileWithCLI(filePath, identitiesToUse);
+    }
+    
+    // Check if we have plugin identities that need CLI support
     const hasPluginIdentities = identitiesToUse.some(i => 
       i.includes('AGE-PLUGIN-SE-') || i.includes('AGE-PLUGIN-YUBIKEY-')
     );
     
-    // For file-based decryption, we should use CLI when we have plugin identities
-    // or when explicitly configured to use binary
-    if (this.config.useAgeBinary || hasPluginIdentities) {
-      // Use command-line age for plugin support or when explicitly configured
+    // Fall back to CLI for plugin identities (either no native SE or native SE failed)
+    if (hasPluginIdentities) {
+      // Use command-line age for plugin support
       return await this.decryptFileWithCLI(filePath, identitiesToUse);
     }
     
