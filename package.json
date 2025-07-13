@@ -8,6 +8,7 @@
   },
   "files": [
     "dist/",
+    "scripts/",
     "README.md",
     "LICENSE"
   ],
@@ -23,7 +24,8 @@
     "lint": "eslint src/**/*.{js,ts}",
     "lint:fix": "eslint src/**/*.{js,ts} --fix",
     "typecheck": "tsc --noEmit",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "postinstall": "node scripts/postinstall.js"
   },
   "keywords": [
     "password",
