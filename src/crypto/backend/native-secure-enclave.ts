@@ -30,7 +30,9 @@ try {
   const nativeModulePath = path.join(__dirname, '../../native');
   nativeAddon = require(nativeModulePath);
 } catch (error) {
-  console.warn('Failed to load native Secure Enclave addon:', error instanceof Error ? error.message : String(error));
+  const errorMsg = error instanceof Error ? error.message : String(error);
+  console.warn('Native Secure Enclave addon not available:', errorMsg);
+  console.warn('Falling back to CLI backend. To use native SE, ensure you have Xcode/Swift installed and run: npm run build');
   nativeAddon = null;
 }
 

@@ -55,7 +55,9 @@ export class SecureEnclaveManager implements AppleSecureEnclaveAPI {
             return;
           }
         } catch (error) {
-          console.warn('Native SE backend not available:', error instanceof Error ? error.message : String(error));
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          console.warn('Native SE backend not available:', errorMsg);
+          console.warn('This is normal when installed from npm. Falling back to CLI backend.');
         }
       }
 

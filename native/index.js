@@ -20,7 +20,8 @@ try {
   }
 } catch (error) {
   // If loading fails, we'll throw an error when methods are called
-  console.warn('Failed to load native Secure Enclave addon:', error.message);
+  console.warn('Native Secure Enclave binary not available:', error.message);
+  console.warn('This is normal if installed from npm. Use CLI backend instead.');
   nativeAddon = null;
 }
 
