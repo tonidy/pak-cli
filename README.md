@@ -28,7 +28,7 @@ npx @kdbx/pak --help
 
 >So whether you're asking for help or giving a command, saying "Pak" makes everything sound more friendly and respectful — just like how locals do it.
 
-> And now, if you're using pak as a command-line tool
+> And now, you're using pak as a command-line tool 😄.
 
 ## Usage
 
