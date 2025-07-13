@@ -44,12 +44,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tonidy/pak-lib.git"
+    "url": "git+https://github.com/tonidy/pak-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/tonidy/pak-lib/issues"
+    "url": "https://github.com/tonidy/pak-cli/issues"
   },
-  "homepage": "https://github.com/tonidy/pak-lib#readme",
+  "homepage": "https://github.com/tonidy/pak-cli#readme",
   "devDependencies": {
     "@types/chai": "^5.2.2",
     "@types/jest": "^29.5.0",
