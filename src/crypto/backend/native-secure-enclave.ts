@@ -27,7 +27,7 @@ import {
 // Load the native addon
 let nativeAddon: any;
 try {
-  const nativeModulePath = path.join(__dirname, '../../../native');
+  const nativeModulePath = path.join(__dirname, '../../native');
   nativeAddon = require(nativeModulePath);
 } catch (error) {
   console.warn('Failed to load native Secure Enclave addon:', error instanceof Error ? error.message : String(error));
