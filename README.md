@@ -17,13 +17,13 @@ A simple, secure password manager in JavaScript using [age encryption](https://a
 ## Installation
 
 ```bash
-npm install -g @kdbx/pak-lib
+npm install -g @kdbx/pak
 ```
 
 Or use directly with npx:
 
 ```bash
-npx @kdbx/pak-lib --help
+npx @kdbx/pak --help
 ```
 
 > **Note**: Both `pa` and `pak` commands are available after installation.
@@ -144,7 +144,7 @@ echo "secret" | age -r age1yubikey1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh8
 Use the SE integration programmatically:
 
 ```javascript
-const { AgeManager, AppleSecureEnclave } = require('@kdbx/pak-lib');
+const { AgeManager, AppleSecureEnclave } = require('@kdbx/pak');
 
 // Initialize with SE support
 const config = {
@@ -329,7 +329,7 @@ pa show mysite  # Shows: "SE native decryption failed, falling back to CLI"
 You can also use PAK programmatically:
 
 ```javascript
-import { PasswordManager } from '@kdbx/pak-lib';
+import { PasswordManager } from '@kdbx/pak';
 
 const pm = new PasswordManager();
 
@@ -403,7 +403,7 @@ If you're already using age-plugin-se with pa-cli:
 
 1. Install PAK and age-plugin-se:
 ```bash
-npm install -g @kdbx/pak-lib
+npm install -g @kdbx/pak
 brew install age-plugin-se
 ```
 
