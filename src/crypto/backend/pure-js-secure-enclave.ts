@@ -40,7 +40,10 @@ export class PureJSSecureEnclave {
     };
   }
 
-  async generateKeyPair(accessControl: string): Promise<SecureEnclaveKeyPair> {
+  async generateKeyPair(accessControl: string, format: 'json' | 'bech32' = 'json'): Promise<SecureEnclaveKeyPair> {
+    // Note: Pure JS backend currently only supports JSON format
+    console.log(`Generating Pure JS identity in ${format} format (Pure JS only supports json)`);
+    
     // Generate P256 key pair using Web Crypto API
     const keyPair = await webcrypto.subtle.generateKey(
       {

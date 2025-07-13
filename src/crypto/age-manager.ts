@@ -5,8 +5,8 @@
 import * as age from 'age-encryption';
 import * as fs from 'fs';
 import * as path from 'path';
-import { PakConfig, SecureEnclaveConfig } from '../types';
-import { SecureEnclaveManager } from './secure-enclave-manager';
+import { PakConfig } from '../types';
+import { SecureEnclaveManager, ExtendedSecureEnclaveConfig } from './secure-enclave-manager';
 
 export class AgeManager {
   private identities: string[] = [];
@@ -22,14 +22,13 @@ export class AgeManager {
     
     // Initialize Apple Secure Enclave if available and enabled
     if (process.platform === 'darwin' && !config.useAgeBinary) {
-      const seConfig: SecureEnclaveConfig = {
+      const seConfig: ExtendedSecureEnclaveConfig = {
         accessControl: config.seAccessControl || 'any-biometry-or-passcode',
         recipientType: 'piv-p256',
-        useNative: false,
-        // Use Pure JS backend since native SE is not implemented yet
-        backend: 'pure-js',
-        preferNative: false,
-        fallbackToCli: true
+        useNative: config.useNativeSecureEnclave || false,
+        backend: config.useNativeSecureEnclave ? 'native' : 'auto',
+        preferNative: config.useNativeSecureEnclave || false,
+        fallbackToCli: !config.useNativeSecureEnclave
       };
       this.secureEnclave = new SecureEnclaveManager(seConfig);
     }
@@ -79,6 +78,15 @@ export class AgeManager {
    * Convert an identity to a recipient
    */
   async identityToRecipient(identity: string): Promise<string> {
+    // Handle SE identities with the Secure Enclave backend
+    if (identity.startsWith('AGE-PLUGIN-SE-')) {
+      if (!this.secureEnclave) {
+        throw new Error('Secure Enclave backend not available for SE identity');
+      }
+      return await this.secureEnclave.identityToRecipient(identity);
+    }
+    
+    // Handle standard age identities with age-encryption library
     const recipient = await age.identityToRecipient(identity);
     return recipient;
   }
@@ -168,6 +176,22 @@ export class AgeManager {
     const hasSeIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-SE-'));
     const hasOtherPluginIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-YUBIKEY-'));
     
+    // Helper function to check if an identity is our JSON format
+    const isJsonFormatIdentity = (identity: string): boolean => {
+      if (!identity.startsWith('AGE-PLUGIN-SE-')) return false;
+      const base64Data = identity.substring('AGE-PLUGIN-SE-'.length);
+      try {
+        const decoded = Buffer.from(base64Data, 'base64').toString();
+        const keyData = JSON.parse(decoded);
+        return !!(keyData.privateKey && keyData.publicKey);
+      } catch {
+        return false;
+      }
+    };
+    
+    // Check if we have JSON format identities (these can't use CLI)
+    const hasJsonFormatIdentities = identitiesToUse.some(isJsonFormatIdentity);
+    
     // Use native SE decryption if available and we have SE identities
     if (this.secureEnclave && hasSeIdentities && !hasOtherPluginIdentities && !this.config.useAgeBinary) {
       try {
@@ -183,13 +207,21 @@ export class AgeManager {
           return new TextDecoder().decode(decrypted);
         }
       } catch (error) {
-        // Fall back to CLI on error (expected for CLI-generated identities)
+        // For JSON format identities, don't fall back to CLI since they're incompatible
+        if (hasJsonFormatIdentities) {
+          throw new Error(`Native SE decryption failed: ${error instanceof Error ? error.message : String(error)}. JSON format identities cannot use CLI fallback.`);
+        }
+        // Fall back to CLI on error (only for CLI-compatible identities)
         console.log('SE native decryption failed, falling back to CLI (CLI-generated identities cannot be used by pure JS implementation)');
       }
     }
     
     // Only use CLI when explicitly configured or when we don't have SE support
     if (this.config.useAgeBinary) {
+      // Don't use CLI for JSON format identities (they're incompatible)
+      if (hasJsonFormatIdentities) {
+        throw new Error('CLI age binary cannot handle JSON format identities. Please use native SE backend or disable useAgeBinary.');
+      }
       // Use command-line age when explicitly configured
       return await this.decryptWithCLI(ciphertext, identitiesToUse);
     }
@@ -204,7 +236,12 @@ export class AgeManager {
     const hasPluginCiphertext = ciphertextString.includes('piv-p256') || ciphertextString.includes('yubikey');
     
     // Only fall back to CLI if we don't have native SE support AND we have plugin content
+    // BUT avoid CLI for JSON format identities
     if (!this.secureEnclave && (hasPluginIdentities || hasPluginCiphertext)) {
+      // Don't use CLI for JSON format identities (they're incompatible)
+      if (hasJsonFormatIdentities) {
+        throw new Error('Native SE backend not available and JSON format identities cannot use CLI fallback. Please enable native SE backend.');
+      }
       // Use command-line age for plugin support when native SE is not available
       return await this.decryptWithCLI(ciphertext, identitiesToUse);
     }
@@ -260,6 +297,22 @@ export class AgeManager {
     const hasSeIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-SE-'));
     const hasOtherPluginIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-YUBIKEY-'));
     
+    // Helper function to check if an identity is our JSON format
+    const isJsonFormatIdentity = (identity: string): boolean => {
+      if (!identity.startsWith('AGE-PLUGIN-SE-')) return false;
+      const base64Data = identity.substring('AGE-PLUGIN-SE-'.length);
+      try {
+        const decoded = Buffer.from(base64Data, 'base64').toString();
+        const keyData = JSON.parse(decoded);
+        return !!(keyData.privateKey && keyData.publicKey);
+      } catch {
+        return false;
+      }
+    };
+    
+    // Check if we have JSON format identities (these can't use CLI)
+    const hasJsonFormatIdentities = identitiesToUse.some(isJsonFormatIdentity);
+    
     // Use native SE decryption if available and we have SE identities
     if (this.secureEnclave && hasSeIdentities && !hasOtherPluginIdentities && !this.config.useAgeBinary) {
       try {
@@ -276,13 +329,21 @@ export class AgeManager {
           return new TextDecoder().decode(decrypted);
         }
       } catch (error) {
-        // Fall back to CLI on error (expected for CLI-generated identities)
+        // For JSON format identities, don't fall back to CLI since they're incompatible
+        if (hasJsonFormatIdentities) {
+          throw new Error(`Native SE decryption failed: ${error instanceof Error ? error.message : String(error)}. JSON format identities cannot use CLI fallback.`);
+        }
+        // Fall back to CLI on error (only for CLI-compatible identities)
         console.log('SE native decryption failed, falling back to CLI (CLI-generated identities cannot be used by pure JS implementation)');
       }
     }
     
     // Only use CLI when explicitly configured or when we don't have SE support
     if (this.config.useAgeBinary) {
+      // Don't use CLI for JSON format identities (they're incompatible)
+      if (hasJsonFormatIdentities) {
+        throw new Error('CLI age binary cannot handle JSON format identities. Please use native SE backend or disable useAgeBinary.');
+      }
       // Use command-line age when explicitly configured
       return await this.decryptFileWithCLI(filePath, identitiesToUse);
     }
@@ -293,7 +354,12 @@ export class AgeManager {
     );
     
     // Fall back to CLI for plugin identities (either no native SE or native SE failed)
+    // BUT avoid CLI for JSON format identities
     if (hasPluginIdentities) {
+      // Don't use CLI for JSON format identities (they're incompatible)
+      if (hasJsonFormatIdentities) {
+        throw new Error('Native SE backend not available and JSON format identities cannot use CLI fallback. Please enable native SE backend.');
+      }
       // Use command-line age for plugin support
       return await this.decryptFileWithCLI(filePath, identitiesToUse);
     }
@@ -519,41 +585,36 @@ export class AgeManager {
    */
   async generateSecureEnclaveIdentity(
     accessControl: string = 'any-biometry-or-passcode',
-    outputFile?: string
+    outputFile?: string,
+    format: 'json' | 'bech32' = 'json'
   ): Promise<string> {
-    // Use native SE if available, fallback to CLI
-    if (this.secureEnclave) {
-      try {
-        const keyPair = await this.secureEnclave.generateKeyPair(accessControl);
-        
-        if (outputFile) {
-          const content = `# created: ${keyPair.createdAt.toISOString()}\n# access control: ${accessControl}\n# public key: ${keyPair.recipient}\n${keyPair.identity}\n`;
-          fs.writeFileSync(outputFile, content);
-          return `Public key: ${keyPair.recipient}`;
-        } else {
-          return keyPair.identity;
-        }
-      } catch (error) {
-        console.warn('Native SE key generation failed, falling back to CLI:', error);
-      }
+    if (!this.secureEnclave) {
+      throw new Error('Secure Enclave not available');
     }
-    
-    const { execSync } = await import('child_process');
-    
+
+    if (!this.secureEnclave.validateAccessControl(accessControl)) {
+      throw new Error(`Invalid access control: ${accessControl}`);
+    }
+
     try {
-      const command = outputFile 
-        ? `age-plugin-se keygen --access-control="${accessControl}" -o "${outputFile}"`
-        : `age-plugin-se keygen --access-control="${accessControl}"`;
-      
-      const result = execSync(command, { encoding: 'utf8' });
+      const keyPair = await this.secureEnclave.generateKeyPair(accessControl, format);
       
       if (outputFile) {
-        return result; // Command output with confirmation
-      } else {
-        return result; // Identity content
+        const fs = await import('fs');
+        const content = [
+          `# created: ${new Date().toISOString()}`,
+          `# access control: ${accessControl}`,
+          `# format: ${format}`,
+          `# public key: ${keyPair.recipient}`,
+          keyPair.identity
+        ].join('\n');
+        
+        fs.writeFileSync(outputFile, content, { mode: 0o600 });
       }
+
+      return keyPair.identity;
     } catch (error) {
-      throw new Error(`Failed to generate Secure Enclave identity: ${error}`);
+      throw new Error(`Failed to generate Secure Enclave identity: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <iostream> // Added for debug output
 
 // C function declarations from Swift
 extern "C" {
@@ -36,11 +37,23 @@ extern "C" {
         char** errorOut
     );
     
+    bool se_get_public_key(
+        const unsigned char* privateKeyData,
+        int privateKeyLength,
+        unsigned char** publicKeyOut,
+        int* publicKeyLengthOut,
+        char** errorOut
+    );
+    
     bool se_delete_key(
         const unsigned char* privateKeyData,
         int privateKeyLength,
         char** errorOut
     );
+    
+    bool se_test_encrypt_decrypt_cycle();
+    
+    bool se_test_cryptokit_basic();
     
     void se_free_buffer(unsigned char* buffer);
     void se_free_error(char* error);
@@ -204,6 +217,57 @@ Napi::Buffer<unsigned char> Decrypt(const Napi::CallbackInfo& info) {
     return Napi::Buffer<unsigned char>::Copy(env, plaintext, plaintextLength);
 }
 
+Napi::Buffer<unsigned char> GetPublicKey(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    
+    std::cout << "🔍 GetPublicKey: Starting function" << std::endl;
+    
+    if (info.Length() < 1 || !info[0].IsBuffer()) {
+        std::cout << "❌ GetPublicKey: Invalid arguments" << std::endl;
+        Napi::TypeError::New(env, "Expected buffer (privateKey)").ThrowAsJavaScriptException();
+        return Napi::Buffer<unsigned char>::New(env, 0);
+    }
+    
+    std::cout << "🔍 GetPublicKey: Getting private key buffer" << std::endl;
+    Napi::Buffer<unsigned char> privateKeyBuffer = info[0].As<Napi::Buffer<unsigned char>>();
+    
+    std::cout << "🔍 GetPublicKey: Private key buffer length: " << privateKeyBuffer.Length() << std::endl;
+    
+    unsigned char* publicKey = nullptr;
+    int publicKeyLength = 0;
+    char* error = nullptr;
+    
+    std::cout << "🔍 GetPublicKey: About to call se_get_public_key" << std::endl;
+    
+    bool success = se_get_public_key(
+        privateKeyBuffer.Data(),
+        privateKeyBuffer.Length(),
+        &publicKey,
+        &publicKeyLength,
+        &error
+    );
+    
+    std::cout << "🔍 GetPublicKey: se_get_public_key returned: " << (success ? "success" : "failure") << std::endl;
+    
+    if (!success) {
+        std::cout << "❌ GetPublicKey: Error from Swift: " << (error ? error : "unknown") << std::endl;
+        SwiftError errorWrapper(error);
+        std::string errorMsg = error ? std::string(error) : "Unknown error";
+        Napi::Error::New(env, errorMsg).ThrowAsJavaScriptException();
+        return Napi::Buffer<unsigned char>::New(env, 0);
+    }
+    
+    std::cout << "🔍 GetPublicKey: Public key length: " << publicKeyLength << std::endl;
+    std::cout << "🔍 GetPublicKey: Creating return buffer" << std::endl;
+    
+    SwiftBuffer publicKeyBuffer(publicKey);
+    auto result = Napi::Buffer<unsigned char>::Copy(env, publicKey, publicKeyLength);
+    
+    std::cout << "🔍 GetPublicKey: Function completed successfully" << std::endl;
+    
+    return result;
+}
+
 Napi::Boolean DeleteKey(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     
@@ -232,13 +296,22 @@ Napi::Boolean DeleteKey(const Napi::CallbackInfo& info) {
     return Napi::Boolean::New(env, true);
 }
 
+Napi::Boolean TestCryptoKitBasic(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    
+    bool success = se_test_cryptokit_basic();
+    return Napi::Boolean::New(env, success);
+}
+
 // Module initialization
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("isAvailable", Napi::Function::New(env, IsAvailable));
     exports.Set("generateKeyPair", Napi::Function::New(env, GenerateKeyPair));
     exports.Set("encrypt", Napi::Function::New(env, Encrypt));
     exports.Set("decrypt", Napi::Function::New(env, Decrypt));
+    exports.Set("getPublicKey", Napi::Function::New(env, GetPublicKey));
     exports.Set("deleteKey", Napi::Function::New(env, DeleteKey));
+    exports.Set("testCryptoKitBasic", Napi::Function::New(env, TestCryptoKitBasic));
     
     return exports;
 }

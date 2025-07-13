@@ -1,5 +1,6 @@
 {
   "useAgeBinary": false,
+  "useNativeSecureEnclave": true,
   "seAccessControl": "any-biometry-or-passcode",
   "seAutoConfirm": false
 }

@@ -15,6 +15,7 @@ export interface PakConfig {
   // Secure Enclave specific settings
   seAccessControl?: 'none' | 'passcode' | 'any-biometry' | 'any-biometry-or-passcode' | 'any-biometry-and-passcode' | 'current-biometry' | 'current-biometry-and-passcode';
   seAutoConfirm?: boolean;
+  useNativeSecureEnclave?: boolean;
 }
 
 export interface VersionInfo {
@@ -119,7 +120,7 @@ export interface SecureEnclaveCapabilities {
 
 export interface AppleSecureEnclaveAPI {
   // Key management
-  generateKeyPair(accessControl: string): Promise<SecureEnclaveKeyPair>;
+  generateKeyPair(accessControl: string, format?: 'json' | 'bech32'): Promise<SecureEnclaveKeyPair>;
   loadKeyPair(identity: string): Promise<SecureEnclaveKeyPair>;
   deleteKeyPair(identity: string): Promise<boolean>;
   

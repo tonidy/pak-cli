@@ -115,11 +115,11 @@ export class SecureEnclaveManager implements AppleSecureEnclaveAPI {
     };
   }
 
-  async generateKeyPair(accessControl: string): Promise<SecureEnclaveKeyPair> {
+  async generateKeyPair(accessControl: string, format?: 'json' | 'bech32'): Promise<SecureEnclaveKeyPair> {
     if (!this.backend) {
       await this.initializeBackend();
     }
-    return this.backend!.generateKeyPair(accessControl);
+    return this.backend!.generateKeyPair(accessControl, format);
   }
 
   async loadKeyPair(identity: string): Promise<SecureEnclaveKeyPair> {

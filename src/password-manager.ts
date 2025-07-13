@@ -62,10 +62,12 @@ export class PasswordManager {
     }
     
     // Check if user explicitly disabled age binary
+    // NOTE: If useNativeSecureEnclave is true, useAgeBinary=false is expected and not "explicit disabling"
+    const configUseNativeSE = (configFromFile as any)?.useNativeSecureEnclave || options.config?.useNativeSecureEnclave;
     this.explicitlyDisabledAgeBinary = 
-      (configFromFile as any)?.useAgeBinary === false || 
+      ((configFromFile as any)?.useAgeBinary === false && !configUseNativeSE) || 
       process.env.PA_USE_AGE_BINARY === '0' ||
-      options.config?.useAgeBinary === false;
+      (options.config?.useAgeBinary === false && !options.config?.useNativeSecureEnclave);
     
     this.config = {
       paDir: process.env.PA_DIR || path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'pa'),
@@ -585,10 +587,12 @@ export class PasswordManager {
       const capabilities = await this.getPlatformCapabilities();
       
       if (capabilities.secureEnclave) {
-        // Auto-enable age binary for Secure Enclave support
-        if (!this.config.useAgeBinary) {
+        // Only auto-enable age binary if native SE is not available or disabled
+        if (!this.config.useAgeBinary && !this.config.useNativeSecureEnclave) {
           console.log('Auto-enabling age binary for Secure Enclave support');
           this.config.useAgeBinary = true;
+        } else if (this.config.useNativeSecureEnclave) {
+          console.log('Using native Secure Enclave implementation');
         }
         await this.initializeSecureEnclave();
       } else if (capabilities.yubikey) {
@@ -609,9 +613,11 @@ export class PasswordManager {
       try {
         const identityContent = await this.fileManager.read(this.identitiesFile);
         if (identityContent.includes('AGE-PLUGIN-SE-') || identityContent.includes('AGE-PLUGIN-YUBIKEY-')) {
-          // Check if user explicitly disabled age binary
+          // Check if user explicitly disabled age binary or wants to use native SE
           if (this.explicitlyDisabledAgeBinary) {
             console.log('Detected age plugin identities, but useAgeBinary explicitly set to false - using pure JS SE implementation');
+          } else if (this.config.useNativeSecureEnclave && identityContent.includes('AGE-PLUGIN-SE-')) {
+            console.log('Detected SE identities with native SE enabled - using native implementation');
           } else {
             console.log('Detected age plugin identities, auto-enabling age binary');
             this.config.useAgeBinary = true;

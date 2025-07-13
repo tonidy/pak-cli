@@ -72,10 +72,13 @@ export class CLISecureEnclave implements AppleSecureEnclaveAPI {
     };
   }
 
-  async generateKeyPair(accessControl: string): Promise<SecureEnclaveKeyPair> {
+  async generateKeyPair(accessControl: string, format: 'json' | 'bech32' = 'bech32'): Promise<SecureEnclaveKeyPair> {
     if (!this.validateAccessControl(accessControl)) {
       throw new Error(`Invalid access control: ${accessControl}`);
     }
+
+    // Note: CLI always generates bech32 format, format parameter is for future compatibility
+    console.log(`Generating CLI identity in ${format} format (CLI only supports bech32)`);
 
     const tempFile = path.join(process.cwd(), `.age-se-${Date.now()}.key`);
     

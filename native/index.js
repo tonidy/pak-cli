@@ -120,6 +120,28 @@ async function decrypt(ciphertext, privateKey) {
 }
 
 /**
+ * Get the public key from private key data
+ * @param {Buffer} privateKey - The private key data
+ * @returns {Promise<Buffer>} The public key
+ */
+async function getPublicKey(privateKey) {
+  ensureAddonLoaded();
+  
+  if (!Buffer.isBuffer(privateKey)) {
+    throw new Error('Private key must be a Buffer');
+  }
+  
+  return new Promise((resolve, reject) => {
+    try {
+      const result = nativeAddon.getPublicKey(privateKey);
+      resolve(result);
+    } catch (error) {
+      reject(new Error(`Failed to get public key: ${error.message}`));
+    }
+  });
+}
+
+/**
  * Delete a key from the Secure Enclave
  * @param {Buffer} privateKey - The private key data to delete
  * @returns {Promise<boolean>} True if the key was deleted successfully
@@ -155,11 +177,28 @@ function getInfo() {
   };
 }
 
+/**
+ * Test basic CryptoKit operations
+ * @returns {boolean} True if basic CryptoKit operations work
+ */
+function testCryptoKitBasic() {
+  ensureAddonLoaded();
+  
+  try {
+    return nativeAddon.testCryptoKitBasic();
+  } catch (error) {
+    console.warn('Error testing basic CryptoKit operations:', error.message);
+    return false;
+  }
+}
+
 module.exports = {
   isAvailable,
   generateKeyPair,
   encrypt,
   decrypt,
+  getPublicKey,
   deleteKey,
-  getInfo
+  getInfo,
+  testCryptoKitBasic
 }; 
