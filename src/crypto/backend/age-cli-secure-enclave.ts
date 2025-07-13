@@ -1,6 +1,9 @@
 /**
- * CLI-based Secure Enclave Implementation
- * Uses age-plugin-se binary for Secure Enclave operations
+ * CLI-based Secure Enclave Implementation (Standardized)
+ * 
+ * This implementation uses the age-plugin-se binary for all cryptographic
+ * operations. It has been updated to use the central `format-utils` for
+ * any necessary format parsing to ensure consistency with other backends.
  */
 
 import { spawn } from 'child_process';
@@ -12,6 +15,7 @@ import {
   SecureEnclaveCapabilities,
   SecureEnclaveConfig 
 } from '../../types';
+import { decodeRecipient, decodeIdentity } from '../format-utils';
 
 export class CLISecureEnclave implements AppleSecureEnclaveAPI {
   private pluginPath: string;
@@ -23,15 +27,10 @@ export class CLISecureEnclave implements AppleSecureEnclaveAPI {
   }
 
   async isAvailable(): Promise<boolean> {
+    if (process.platform !== 'darwin' || !this.pluginPath) {
+      return false;
+    }
     try {
-      if (process.platform !== 'darwin') {
-        return false;
-      }
-
-      if (!this.pluginPath) {
-        return false;
-      }
-
       const result = await this.runCommand([this.pluginPath, '--version']);
       return result.success;
     } catch (error) {
@@ -41,55 +40,30 @@ export class CLISecureEnclave implements AppleSecureEnclaveAPI {
 
   async getCapabilities(): Promise<SecureEnclaveCapabilities> {
     const isAvailable = await this.isAvailable();
-    
-    if (!isAvailable) {
-      return {
-        isAvailable: false,
-        supportsKeyGeneration: false,
-        supportsEncryption: false,
-        supportsDecryption: false,
-        supportedAccessControls: [],
-        platform: process.platform,
-      };
-    }
-
     return {
-      isAvailable: true,
-      supportsKeyGeneration: true,
-      supportsEncryption: true,
-      supportsDecryption: true,
-      supportedAccessControls: [
-        'none',
-        'passcode',
-        'any-biometry',
-        'any-biometry-or-passcode',
-        'any-biometry-and-passcode',
-        'current-biometry',
-        'current-biometry-and-passcode'
-      ],
+      isAvailable,
+      supportsKeyGeneration: isAvailable,
+      supportsEncryption: isAvailable,
+      supportsDecryption: isAvailable,
+      supportedAccessControls: isAvailable ? [
+        'none', 'passcode', 'any-biometry', 'any-biometry-or-passcode',
+        'any-biometry-and-passcode', 'current-biometry', 'current-biometry-and-passcode'
+      ] : [],
       platform: process.platform,
-      version: await this.getPluginVersion(),
+      version: isAvailable ? await this.getPluginVersion() : 'unavailable',
     };
   }
 
-  async generateKeyPair(accessControl: string, format: 'json' | 'bech32' = 'bech32'): Promise<SecureEnclaveKeyPair> {
+  async generateKeyPair(accessControl: string): Promise<SecureEnclaveKeyPair> {
     if (!this.validateAccessControl(accessControl)) {
       throw new Error(`Invalid access control: ${accessControl}`);
     }
-
-    // Note: CLI always generates bech32 format, format parameter is for future compatibility
-    console.log(`Generating CLI identity in ${format} format (CLI only supports bech32)`);
 
     const tempFile = path.join(process.cwd(), `.age-se-${Date.now()}.key`);
     
     try {
       const result = await this.runCommand([
-        this.pluginPath,
-        'keygen',
-        '--access-control',
-        accessControl,
-        '--output',
-        tempFile
+        this.pluginPath, 'keygen', '--access-control', accessControl, '--output', tempFile
       ]);
 
       if (!result.success) {
@@ -98,50 +72,45 @@ export class CLISecureEnclave implements AppleSecureEnclaveAPI {
 
       const keyContent = fs.readFileSync(tempFile, 'utf8');
       const recipient = this.extractRecipientFromOutput(result.stdout);
-      
-      const lines = keyContent.split('\n').filter(line => line.trim() && !line.startsWith('#'));
-      const identity = lines[0];
+      const identity = keyContent.split('\n').find(line => line.startsWith('AGE-PLUGIN-SE-')) || '';
 
-      this.parseAgeIdentity(identity);
-      
-      const keyPair: SecureEnclaveKeyPair = {
+      if (!identity) {
+        throw new Error('Could not find identity in keygen output.');
+      }
+
+      const publicKey = decodeRecipient(recipient);
+
+      return {
         identity,
         recipient,
-        publicKey: await this.getPublicKeyFromIdentity(identity),
-        privateKeyRef: this.getPrivateKeyReference(identity),
+        publicKey,
+        privateKeyRef: identity, // For CLI, the identity is the private key reference
         accessControl,
         createdAt: new Date()
       };
-
-      return keyPair;
     } finally {
-      try {
+      if (fs.existsSync(tempFile)) {
         fs.unlinkSync(tempFile);
-      } catch (error) {
-        // Ignore cleanup errors
       }
     }
   }
 
   async loadKeyPair(identity: string): Promise<SecureEnclaveKeyPair> {
-    try {
-      const { accessControl } = this.parseAgeIdentity(identity);
-      const recipient = await this.identityToRecipient(identity);
-      
-      return {
-        identity,
-        recipient,
-        publicKey: await this.getPublicKeyFromIdentity(identity),
-        privateKeyRef: this.getPrivateKeyReference(identity),
-        accessControl,
-        createdAt: new Date()
-      };
-    } catch (error) {
-      throw new Error(`Failed to load key pair: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    const recipient = await this.identityToRecipient(identity);
+    const publicKey = decodeRecipient(recipient);
+
+    return {
+      identity,
+      recipient,
+      publicKey,
+      privateKeyRef: identity,
+      accessControl: this.config.accessControl, // Not stored in key
+      createdAt: new Date() // Not stored in key
+    };
   }
 
   async deleteKeyPair(_identity: string): Promise<boolean> {
+    // The CLI plugin does not support key deletion. Keys are file-based.
     return true;
   }
 
@@ -162,7 +131,9 @@ export class CLISecureEnclave implements AppleSecureEnclaveAPI {
     const tempFile = path.join(process.cwd(), `.age-se-identity-${Date.now()}.key`);
     
     try {
-      fs.writeFileSync(tempFile, privateKeyRef);
+      // Write a properly formatted identity file
+      // The age CLI expects just the identity string without extra comments for plugin identities
+      fs.writeFileSync(tempFile, privateKeyRef + '\n');
       
       const result = await this.runCommandWithInput(
         ['age', '--decrypt', '--identity', tempFile],
@@ -175,10 +146,8 @@ export class CLISecureEnclave implements AppleSecureEnclaveAPI {
 
       return result.stdout;
     } finally {
-      try {
+      if (fs.existsSync(tempFile)) {
         fs.unlinkSync(tempFile);
-      } catch (error) {
-        // Ignore cleanup errors
       }
     }
   }
@@ -187,13 +156,12 @@ export class CLISecureEnclave implements AppleSecureEnclaveAPI {
     const tempFile = path.join(process.cwd(), `.age-se-identity-${Date.now()}.key`);
     
     try {
-      fs.writeFileSync(tempFile, identity);
+      // Write a properly formatted identity file
+      // The age CLI expects just the identity string without extra comments for plugin identities
+      fs.writeFileSync(tempFile, identity + '\n');
       
       const result = await this.runCommand([
-        this.pluginPath,
-        'recipients',
-        '--input',
-        tempFile
+        this.pluginPath, 'recipients', '--input', tempFile
       ]);
 
       if (!result.success) {
@@ -202,50 +170,33 @@ export class CLISecureEnclave implements AppleSecureEnclaveAPI {
 
       return result.stdout.trim();
     } finally {
-      try {
+      if (fs.existsSync(tempFile)) {
         fs.unlinkSync(tempFile);
-      } catch (error) {
-        // Ignore cleanup errors
       }
     }
   }
 
   validateAccessControl(accessControl: string): boolean {
     const validControls = [
-      'none',
-      'passcode',
-      'any-biometry',
-      'any-biometry-or-passcode',
-      'any-biometry-and-passcode',
-      'current-biometry',
-      'current-biometry-and-passcode'
+      'none', 'passcode', 'any-biometry', 'any-biometry-or-passcode',
+      'any-biometry-and-passcode', 'current-biometry', 'current-biometry-and-passcode'
     ];
-    
     return validControls.includes(accessControl);
   }
 
   parseAgeIdentity(identity: string): { data: Uint8Array; accessControl: string } {
-    if (!identity.startsWith('AGE-PLUGIN-SE-')) {
-      throw new Error('Invalid SE identity format');
-    }
-
-    const base64Data = identity.substring('AGE-PLUGIN-SE-'.length);
-    const data = Buffer.from(base64Data, 'base64');
-    
+    const data = decodeIdentity(identity);
     return {
       data,
       accessControl: this.config.accessControl
     };
   }
 
-  recipientToAgeFormat(publicKey: Uint8Array, type: 'piv-p256' | 'p256tag'): string {
-    const keyBase64 = Buffer.from(publicKey).toString('base64');
-    
-    if (type === 'piv-p256') {
-      return `age1se1${keyBase64}`;
-    } else {
-      return `age1p256tag1${keyBase64}`;
-    }
+  recipientToAgeFormat(publicKey: Uint8Array): string {
+    // The CLI backend doesn't use this directly, but we implement it for API consistency.
+    // It will format a given public key into the standard recipient format.
+    const { encodeRecipient, compressPublicKey } = require('../format-utils');
+    return encodeRecipient(compressPublicKey(publicKey));
   }
 
   private async getPluginVersion(): Promise<string> {
@@ -262,49 +213,23 @@ export class CLISecureEnclave implements AppleSecureEnclaveAPI {
   }
 
   private extractRecipientFromOutput(output: string): string {
-    const match = output.match(/Public key:\s*(age1se1\w+)/);
+    // Match age1se prefix (without the trailing 1)
+    const match = output.match(/age1se[a-z0-9]+/);
     if (match) {
-      return match[1];
+      return match[0];
     }
-    
-    const fallbackMatch = output.match(/age1se1\w+/);
-    if (fallbackMatch) {
-      return fallbackMatch[0];
-    }
-    
-    throw new Error('Could not extract recipient from output');
-  }
-
-  private async getPublicKeyFromIdentity(identity: string): Promise<Uint8Array> {
-    const { data } = this.parseAgeIdentity(identity);
-    return data.slice(0, 33);
-  }
-
-  private getPrivateKeyReference(identity: string): string {
-    return identity;
+    throw new Error('Could not extract recipient from keygen output');
   }
 
   private async runCommand(args: string[]): Promise<{ success: boolean; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
       const proc = spawn(args[0], args.slice(1), { stdio: 'pipe' });
-      
       let stdout = '';
       let stderr = '';
-      
-      proc.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-      
-      proc.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-      
+      proc.stdout.on('data', (data) => { stdout += data.toString(); });
+      proc.stderr.on('data', (data) => { stderr += data.toString(); });
       proc.on('close', (code) => {
-        resolve({
-          success: code === 0,
-          stdout,
-          stderr
-        });
+        resolve({ success: code === 0, stdout, stderr });
       });
     });
   }
@@ -312,28 +237,15 @@ export class CLISecureEnclave implements AppleSecureEnclaveAPI {
   private async runCommandWithInput(args: string[], input: Uint8Array): Promise<{ success: boolean; stdout: Buffer; stderr: string }> {
     return new Promise((resolve) => {
       const proc = spawn(args[0], args.slice(1), { stdio: 'pipe' });
-      
       const stdoutChunks: Buffer[] = [];
       let stderr = '';
-      
-      proc.stdout.on('data', (data) => {
-        stdoutChunks.push(data);
-      });
-      
-      proc.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-      
+      proc.stdout.on('data', (data) => { stdoutChunks.push(data); });
+      proc.stderr.on('data', (data) => { stderr += data.toString(); });
       proc.on('close', (code) => {
-        resolve({
-          success: code === 0,
-          stdout: Buffer.concat(stdoutChunks),
-          stderr
-        });
+        resolve({ success: code === 0, stdout: Buffer.concat(stdoutChunks), stderr });
       });
-      
       proc.stdin.write(input);
       proc.stdin.end();
     });
   }
-} 
+}

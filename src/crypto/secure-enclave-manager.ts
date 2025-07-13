@@ -62,7 +62,7 @@ export class SecureEnclaveManager implements AppleSecureEnclaveAPI {
       // Try pure JS backend
       try {
         this.backend = new PureJSSecureEnclave(this.config);
-        if (await this.backend.isAvailable()) {
+        if (this.backend && await this.backend.isAvailable()) {
           this.backendType = 'pure-js';
           return;
         }

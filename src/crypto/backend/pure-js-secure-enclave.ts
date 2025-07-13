@@ -1,22 +1,42 @@
 /**
- * Pure JavaScript Secure Enclave Implementation
- * Uses Node.js crypto APIs with P256 ECIES for age-compatible encryption
- * Note: This simulates SE operations but keys are not hardware-backed
+ * Pure JavaScript Secure Enclave Implementation (Standardized)
+ * 
+ * This implementation simulates Secure Enclave operations using standard,
+ * interoperable cryptographic formats as defined by the age-plugin-se spec.
+ * It uses @noble/curves for P-256 operations and our custom format-utils
+ * to ensure all keys and formats are compatible with the CLI and native backends.
+ * 
+ * Note: As a pure JS implementation, keys are not hardware-backed.
  */
 
-import { webcrypto } from 'crypto';
-import { SecureEnclaveKeyPair, SecureEnclaveCapabilities, SecureEnclaveConfig } from '../../types';
+import { p256 } from '@noble/curves/p256';
+import { hkdf } from '@noble/hashes/hkdf';
+import { sha256 } from '@noble/hashes/sha256';
+import { chacha20poly1305 } from '@noble/ciphers/chacha';
+import { randomBytes } from 'crypto';
+
+import { 
+  SecureEnclaveKeyPair, 
+  SecureEnclaveCapabilities, 
+  SecureEnclaveConfig 
+} from '../../types';
+import {
+  encodeIdentity,
+  decodeIdentity,
+  encodeRecipient,
+  decodeRecipient,
+} from '../format-utils';
 
 export class PureJSSecureEnclave {
   private config: SecureEnclaveConfig;
-  private keyStore: Map<string, CryptoKeyPair> = new Map();
+  // Store raw private keys (as hex strings) since this is not hardware-backed
+  private keyStore: Map<string, Uint8Array> = new Map();
 
   constructor(config: SecureEnclaveConfig) {
     this.config = config;
   }
 
   async isAvailable(): Promise<boolean> {
-    // Pure JS version is available on all platforms
     return true;
   }
 
@@ -27,469 +47,212 @@ export class PureJSSecureEnclave {
       supportsEncryption: true,
       supportsDecryption: true,
       supportedAccessControls: [
-        'none',
-        'passcode',
-        'any-biometry',
-        'any-biometry-or-passcode',
-        'any-biometry-and-passcode',
-        'current-biometry',
-        'current-biometry-and-passcode'
+        'none', 'passcode', 'any-biometry', 'any-biometry-or-passcode',
+        'any-biometry-and-passcode', 'current-biometry', 'current-biometry-and-passcode'
       ],
       platform: process.platform,
-      version: 'pure-js-1.0.0',
+      version: 'pure-js-2.0.0',
     };
   }
 
-  async generateKeyPair(accessControl: string, format: 'json' | 'bech32' = 'json'): Promise<SecureEnclaveKeyPair> {
-    // Note: Pure JS backend currently only supports JSON format
-    console.log(`Generating Pure JS identity in ${format} format (Pure JS only supports json)`);
+  async generateKeyPair(accessControl: string): Promise<SecureEnclaveKeyPair> {
+    const privateKey = p256.utils.randomPrivateKey();
+    const publicKey = p256.getPublicKey(privateKey, true); // true for compressed
+
+    const identity = encodeIdentity(privateKey);
+    const recipient = encodeRecipient(publicKey);
     
-    // Generate P256 key pair using Web Crypto API
-    const keyPair = await webcrypto.subtle.generateKey(
-      {
-        name: 'ECDH',
-        namedCurve: 'P-256',
-      },
-      true, // extractable
-      ['deriveBits']
-    );
-
-    // Note: In a full implementation, we might also generate a signing key pair
-
-    // Export public key
-    const publicKeyData = await webcrypto.subtle.exportKey('raw', keyPair.publicKey);
-    const publicKeyBuffer = Buffer.from(publicKeyData);
-
-    // Export private key (in a real SE implementation, this would be a reference)
-    const privateKeyData = await webcrypto.subtle.exportKey('pkcs8', keyPair.privateKey);
-    const privateKeyBuffer = Buffer.from(privateKeyData);
-
-    // Generate a unique key tag
-    const keyTag = `se-key-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // In this pure-js implementation, the "reference" is the key itself.
+    const privateKeyRef = Buffer.from(privateKey).toString('hex');
+    this.keyStore.set(privateKeyRef, privateKey);
     
-    // Store the key pair (in real SE, this would be in hardware)
-    this.keyStore.set(keyTag, { publicKey: keyPair.publicKey, privateKey: keyPair.privateKey });
-
-    // Convert to age format - include both private and public key data in identity
-    const recipient = this.publicKeyToAgeRecipient(publicKeyBuffer);
-    const identity = this.privateKeyToAgeIdentity(privateKeyBuffer, keyTag, publicKeyBuffer);
+    console.log('[PURE-JS] Generated key pair:');
+    console.log('  - privateKeyRef:', privateKeyRef.substring(0, 20) + '...');
+    console.log('  - identity:', identity.substring(0, 50) + '...');
+    console.log('  - recipient:', recipient);
+    console.log('  - keyStore size:', this.keyStore.size);
 
     return {
       identity,
       recipient,
-      publicKey: publicKeyBuffer,
-      privateKeyRef: keyTag,
+      publicKey,
+      privateKeyRef,
       accessControl,
       createdAt: new Date()
     };
   }
 
   async loadKeyPair(identity: string): Promise<SecureEnclaveKeyPair> {
-    let privateKeyData: Buffer;
-    let publicKeyData: Buffer | null;
-    let keyTag: string;
-    let accessControl: string;
+    console.log('[PURE-JS] Loading key pair from identity:', identity.substring(0, 50) + '...');
     
-    try {
-      const parsed = this.parseAgeIdentityInternal(identity);
-      privateKeyData = parsed.privateKeyData;
-      publicKeyData = parsed.publicKeyData;
-      keyTag = parsed.keyTag;
-      accessControl = parsed.accessControl;
-      
-      // If this is a CLI-generated identity (indicated by keyTag), we can't use it
-      if (keyTag === 'cli-generated') {
-        throw new Error('CLI-generated identities cannot be used by pure JS implementation');
-      }
-    } catch (error: any) {
-      // If parsing fails, this is likely a CLI-generated identity
-      throw new Error(`Cannot load SE identity: ${error.message}. CLI-generated identities require the CLI binary.`);
-    }
+    const privateKey = decodeIdentity(identity);
+    const publicKey = p256.getPublicKey(privateKey, true);
+
+    const recipient = encodeRecipient(publicKey);
+    const privateKeyRef = Buffer.from(privateKey).toString('hex');
+    this.keyStore.set(privateKeyRef, privateKey);
     
-    // Import the private key
-    const privateKey = await webcrypto.subtle.importKey(
-      'pkcs8',
-      privateKeyData,
-      {
-        name: 'ECDH',
-        namedCurve: 'P-256',
-      },
-      false,
-      ['deriveBits']
-    );
-
-    // Use stored public key if available, otherwise derive it
-    const publicKeyBuffer = publicKeyData || await this.getPublicKeyFromPrivate(privateKey);
-
-    // Store the key pair
-    const keyPair = await this.createKeyPairFromKeys(privateKey, publicKeyBuffer);
-    this.keyStore.set(keyTag, keyPair);
+    console.log('[PURE-JS] Loaded key:');
+    console.log('  - privateKeyRef:', privateKeyRef.substring(0, 20) + '...');
+    console.log('  - recipient:', recipient);
+    console.log('  - keyStore size:', this.keyStore.size);
 
     return {
       identity,
-      recipient: this.publicKeyToAgeRecipient(publicKeyBuffer),
-      publicKey: publicKeyBuffer,
-      privateKeyRef: keyTag,
-      accessControl,
-      createdAt: new Date()
+      recipient,
+      publicKey,
+      privateKeyRef,
+      accessControl: this.config.accessControl, // Access control is not stored in the key
+      createdAt: new Date() // Creation date is not stored, so we use now
     };
   }
 
   async deleteKeyPair(identity: string): Promise<boolean> {
-    const { keyTag } = this.parseAgeIdentityInternal(identity);
-    return this.keyStore.delete(keyTag);
+    const privateKey = decodeIdentity(identity);
+    const privateKeyRef = Buffer.from(privateKey).toString('hex');
+    return this.keyStore.delete(privateKeyRef);
   }
 
   async encrypt(data: Uint8Array, recipient: string): Promise<Uint8Array> {
-    // Parse age recipient to get public key
-    const publicKeyData = this.parseAgeRecipient(recipient);
+    const recipientPublicKey = decodeRecipient(recipient);
+
+    const ephemeralPrivateKey = p256.utils.randomPrivateKey();
+    const ephemeralPublicKey = p256.getPublicKey(ephemeralPrivateKey, true);
+
+    const sharedSecret = p256.getSharedSecret(ephemeralPrivateKey, recipientPublicKey);
     
-    // Import public key (uncompressed format)
-    const publicKey = await webcrypto.subtle.importKey(
-      'raw',
-      publicKeyData,
-      {
-        name: 'ECDH',
-        namedCurve: 'P-256',
-      },
-      false,
-      []
-    );
+    const salt = new Uint8Array([...ephemeralPublicKey, ...recipientPublicKey]);
+    const info = new TextEncoder().encode('piv-p256');
+    
+    const wrapKey = hkdf(sha256, sharedSecret, salt, info, 32);
 
-    // Generate ephemeral key pair
-    const ephemeralKeyPair = await webcrypto.subtle.generateKey(
-      {
-        name: 'ECDH',
-        namedCurve: 'P-256',
-      },
-      true,
-      ['deriveBits']
-    );
+    const fileKey = randomBytes(16);
+    const sealedFileKey = chacha20poly1305(wrapKey, new Uint8Array(12)).encrypt(fileKey);
 
-    // Derive shared secret
-    const sharedSecret = await webcrypto.subtle.deriveBits(
-      {
-        name: 'ECDH',
-        public: publicKey,
-      },
-      ephemeralKeyPair.privateKey,
-      256
-    );
+    const tag = sha256(recipientPublicKey).slice(0, 4);
 
-    // Use shared secret for AES-GCM encryption
-    const key = await webcrypto.subtle.importKey(
-      'raw',
-      sharedSecret,
-      { name: 'AES-GCM' },
-      false,
-      ['encrypt']
-    );
+    const header = new TextEncoder().encode('age-encryption.org/v1\n-> piv-p256 ');
+    const stanza = new TextEncoder().encode(`${Buffer.from(tag).toString('base64')} ${Buffer.from(ephemeralPublicKey).toString('base64')}\n`);
+    const body = new TextEncoder().encode(`${Buffer.from(sealedFileKey).toString('base64')}\n---`);
+    
+    const payloadSalt = new TextEncoder().encode('age-encryption.org/v1/payload');
+    const payloadKey = hkdf(sha256, fileKey, payloadSalt, new Uint8Array(), 32);
+    const payloadNonce = new Uint8Array(12);
+    payloadNonce[11] = 1;
 
-    const iv = webcrypto.getRandomValues(new Uint8Array(12));
-    const encryptedData = await webcrypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      data
-    );
+    const encryptedPayload = chacha20poly1305(payloadKey, payloadNonce).encrypt(data);
 
-    // Export ephemeral public key (65 bytes uncompressed)
-    const ephemeralPublicKeyData = await webcrypto.subtle.exportKey('raw', ephemeralKeyPair.publicKey);
+    const finalCiphertext = new Uint8Array(header.length + stanza.length + body.length + encryptedPayload.length);
+    finalCiphertext.set(header, 0);
+    finalCiphertext.set(stanza, header.length);
+    finalCiphertext.set(body, header.length + stanza.length);
+    finalCiphertext.set(encryptedPayload, header.length + stanza.length + body.length);
 
-    // Create age-compatible format (65 bytes public key + 12 bytes IV + encrypted data)
-    const result = new Uint8Array(65 + 12 + encryptedData.byteLength);
-    result.set(new Uint8Array(ephemeralPublicKeyData), 0);
-    result.set(iv, 65);
-    result.set(new Uint8Array(encryptedData), 77);
-
-    return result;
+    return finalCiphertext;
   }
 
   async decrypt(ciphertext: Uint8Array, privateKeyRef: string): Promise<Uint8Array> {
-    // Get stored key pair
-    const keyPair = this.keyStore.get(privateKeyRef);
-    if (!keyPair) {
-      throw new Error('Private key not found');
+    console.log('[PURE-JS] Decrypt called:');
+    console.log('  - privateKeyRef:', privateKeyRef?.substring(0, 20) + '...');
+    
+    let privateKey: Uint8Array;
+    
+    // Always decode from identity string for stateless operation
+    if (privateKeyRef.startsWith('AGE-PLUGIN-SE-') || privateKeyRef.startsWith('age-plugin-se-')) {
+      console.log('[PURE-JS] Decoding identity string...');
+      privateKey = decodeIdentity(privateKeyRef);
+      console.log('[PURE-JS] Successfully decoded private key from identity, length:', privateKey.length);
+      
+      // Ensure we have exactly 32 bytes for the private key
+      if (privateKey.length !== 32) {
+        throw new Error(`Invalid private key length: expected 32, got ${privateKey.length}`);
+      }
+    } else {
+      // If it's a hex string, convert it to Uint8Array
+      console.log('[PURE-JS] Converting hex privateKeyRef to Uint8Array...');
+      privateKey = Buffer.from(privateKeyRef, 'hex');
+      console.log('[PURE-JS] Hex private key length:', privateKey.length);
+      
+      // Ensure we have exactly 32 bytes for the private key
+      if (privateKey.length !== 32) {
+        throw new Error(`Invalid private key length: expected 32, got ${privateKey.length}`);
+      }
+    }
+    const publicKey = p256.getPublicKey(privateKey, true);
+    const expectedTag = sha256(publicKey).slice(0, 4);
+
+    const textDecoder = new TextDecoder();
+    const text = textDecoder.decode(ciphertext);
+    
+    const headerEnd = text.indexOf('\n---');
+    if (headerEnd === -1) throw new Error('Invalid age file format: missing header separator');
+    
+    const header = text.substring(0, headerEnd);
+    const payload = ciphertext.slice(headerEnd + 4);
+
+    const stanzas = header.split('-> ').slice(1);
+    let fileKey: Uint8Array | null = null;
+
+    for (const stanzaText of stanzas) {
+        const lines = stanzaText.trim().split('\n');
+        const args = lines[0].split(' ');
+        if (args[0] !== 'piv-p256' || args.length < 3) continue;
+
+        const tag = Buffer.from(args[1], 'base64');
+        if (Buffer.compare(tag, Buffer.from(expectedTag)) !== 0) continue;
+
+        const ephemeralPublicKey = Buffer.from(args[2], 'base64');
+        const sealedFileKey = Buffer.from(lines[1], 'base64');
+
+        const sharedSecret = p256.getSharedSecret(privateKey, ephemeralPublicKey);
+        const salt = new Uint8Array([...ephemeralPublicKey, ...publicKey]);
+        const info = new TextEncoder().encode('piv-p256');
+        const wrapKey = hkdf(sha256, sharedSecret, salt, info, 32);
+
+        try {
+            fileKey = chacha20poly1305(wrapKey, new Uint8Array(12)).decrypt(sealedFileKey);
+            break;
+        } catch (e) {
+            // This stanza was not for us, continue
+        }
     }
 
-    // Extract components from ciphertext (65 bytes public key + 12 bytes IV + encrypted data)
-    const ephemeralPublicKeyData = ciphertext.slice(0, 65);
-    const iv = ciphertext.slice(65, 77);
-    const encryptedData = ciphertext.slice(77);
+    if (!fileKey) {
+        throw new Error('Decryption failed: no matching recipient stanza found or invalid key.');
+    }
 
-    // Import ephemeral public key (65 bytes uncompressed)
-    const ephemeralPublicKey = await webcrypto.subtle.importKey(
-      'raw',
-      ephemeralPublicKeyData,
-      {
-        name: 'ECDH',
-        namedCurve: 'P-256',
-      },
-      false,
-      []
-    );
+    const payloadSalt = new TextEncoder().encode('age-encryption.org/v1/payload');
+    const payloadKey = hkdf(sha256, fileKey, payloadSalt, new Uint8Array(), 32);
+    const payloadNonce = new Uint8Array(12);
+    payloadNonce[11] = 1;
 
-    // Derive shared secret
-    const sharedSecret = await webcrypto.subtle.deriveBits(
-      {
-        name: 'ECDH',
-        public: ephemeralPublicKey,
-      },
-      keyPair.privateKey,
-      256
-    );
-
-    // Use shared secret for AES-GCM decryption
-    const key = await webcrypto.subtle.importKey(
-      'raw',
-      sharedSecret,
-      { name: 'AES-GCM' },
-      false,
-      ['decrypt']
-    );
-
-    const decryptedData = await webcrypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      encryptedData
-    );
-
-    return new Uint8Array(decryptedData);
+    return chacha20poly1305(payloadKey, payloadNonce).decrypt(payload);
   }
 
   async identityToRecipient(identity: string): Promise<string> {
-    try {
-      const { privateKeyData, publicKeyData, keyTag } = this.parseAgeIdentityInternal(identity);
-      
-      // If this is a CLI-generated identity, we can't convert it
-      if (keyTag === 'cli-generated') {
-        throw new Error('CLI-generated identities cannot be converted by pure JS implementation');
-      }
-      
-      // If we have the public key stored, use it directly
-      if (publicKeyData) {
-        return this.publicKeyToAgeRecipient(publicKeyData);
-      }
-
-      // Otherwise, derive it from the private key
-      const privateKey = await webcrypto.subtle.importKey(
-        'pkcs8',
-        privateKeyData,
-        {
-          name: 'ECDH',
-          namedCurve: 'P-256',
-        },
-        false,
-        ['deriveBits']
-      );
-
-      // Get public key from private key
-      const derivedPublicKeyData = await this.getPublicKeyFromPrivate(privateKey);
-      
-      return this.publicKeyToAgeRecipient(derivedPublicKeyData);
-    } catch (error: any) {
-      throw new Error(`Cannot convert SE identity to recipient: ${error.message}. CLI-generated identities require the CLI binary.`);
-    }
-  }
-
-  private async getPublicKeyFromPrivate(_privateKey: CryptoKey): Promise<Buffer> {
-    // Generate an ephemeral key pair and use ECDH to derive the public key
-    // This is a workaround since Web Crypto API doesn't directly expose public key from private key
-    const ephemeralKeyPair = await webcrypto.subtle.generateKey(
-      {
-        name: 'ECDH',
-        namedCurve: 'P-256',
-      },
-      true,
-      ['deriveBits']
-    );
-
-    // Export the ephemeral public key as a base for our format
-    const ephemeralPublicRaw = await webcrypto.subtle.exportKey('raw', ephemeralKeyPair.publicKey);
-    
-    // For now, we'll use a simplified approach and store the derived public key with the private key
-    // In a real implementation, this would use proper EC point derivation
-    return Buffer.from(ephemeralPublicRaw);
-  }
-
-  private async createKeyPairFromKeys(privateKey: CryptoKey, publicKeyData: Buffer): Promise<CryptoKeyPair> {
-    // Import the public key
-    const publicKey = await webcrypto.subtle.importKey(
-      'raw',
-      publicKeyData,
-      {
-        name: 'ECDH',
-        namedCurve: 'P-256',
-      },
-      false,
-      []
-    );
-
-    return { privateKey, publicKey };
-  }
-
-
-
-  private publicKeyToAgeRecipient(publicKey: Buffer): string {
-    // Convert P256 public key to age1se1... format
-    // Use proper base64url encoding (RFC 4648 Section 5)
-    const encoded = publicKey.toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
-    return `age1se1${encoded}`;
-  }
-
-  private privateKeyToAgeIdentity(privateKey: Buffer, keyTag: string, publicKey?: Buffer): string {
-    // Convert private key to AGE-PLUGIN-SE-... format
-    const keyData = {
-      privateKey: privateKey.toString('base64'),
-      publicKey: publicKey ? publicKey.toString('base64') : null,
-      keyTag,
-      accessControl: this.config.accessControl
-    };
-    const encoded = Buffer.from(JSON.stringify(keyData)).toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
-    return `AGE-PLUGIN-SE-${encoded}`;
-  }
-
-  parseAgeIdentity(identity: string): { data: Uint8Array; accessControl: string } {
-    if (!identity.startsWith('AGE-PLUGIN-SE-')) {
-      throw new Error('Invalid SE identity format');
-    }
-
-    const encoded = identity.substring('AGE-PLUGIN-SE-'.length);
-    
-    // Try to parse as JSON first (our own format)
-    try {
-      const decoded = Buffer.from(encoded.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
-      const keyData = JSON.parse(decoded.toString());
-      
-      return {
-        data: Buffer.from(keyData.privateKey, 'base64'),
-        accessControl: keyData.accessControl
-      };
-           } catch (jsonError: any) {
-         // If JSON parsing fails, treat as Bech32 format from CLI binary
-         try {
-           const bech32Data = this.decodeBech32(encoded);
-           return {
-             data: bech32Data,
-             accessControl: this.config.accessControl
-           };
-         } catch (bech32Error: any) {
-           throw new Error(`Failed to parse SE identity: JSON error: ${jsonError.message}, Bech32 error: ${bech32Error.message}`);
-         }
-       }
-  }
-
-  private parseAgeIdentityInternal(identity: string): { privateKeyData: Buffer; publicKeyData: Buffer | null; keyTag: string; accessControl: string } {
-    if (!identity.startsWith('AGE-PLUGIN-SE-')) {
-      throw new Error('Invalid SE identity format');
-    }
-
-    const encoded = identity.substring('AGE-PLUGIN-SE-'.length);
-    
-    // Try to parse as JSON first (our own format)
-    try {
-      const decoded = Buffer.from(encoded.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
-      const keyData = JSON.parse(decoded.toString());
-
-      return {
-        privateKeyData: Buffer.from(keyData.privateKey, 'base64'),
-        publicKeyData: keyData.publicKey ? Buffer.from(keyData.publicKey, 'base64') : null,
-        keyTag: keyData.keyTag,
-        accessControl: keyData.accessControl
-      };
-    } catch (jsonError: any) {
-      // If JSON parsing fails, treat as Bech32 format from CLI binary
-      try {
-        const bech32Data = this.decodeBech32(encoded);
-        
-        // For CLI-generated identities, we don't have separate public key data
-        // We'll derive it when needed
-        return {
-          privateKeyData: Buffer.from(bech32Data),
-          publicKeyData: null,
-          keyTag: 'cli-generated', // Tag to indicate this came from CLI
-          accessControl: this.config.accessControl
-        };
-      } catch (bech32Error: any) {
-        throw new Error(`Failed to parse SE identity: JSON error: ${jsonError.message}, Bech32 error: ${bech32Error.message}`);
-      }
-    }
-  }
-
-  private parseAgeRecipient(recipient: string): Buffer {
-    if (!recipient.startsWith('age1se1')) {
-      throw new Error('Invalid SE recipient format');
-    }
-
-    const encoded = recipient.substring('age1se1'.length);
-    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
-    // Add padding if needed
-    const padding = '='.repeat((4 - (base64.length % 4)) % 4);
-    return Buffer.from(base64 + padding, 'base64');
+    const privateKey = decodeIdentity(identity);
+    const publicKey = p256.getPublicKey(privateKey, true);
+    return encodeRecipient(publicKey);
   }
 
   validateAccessControl(accessControl: string): boolean {
     const validControls = [
-      'none',
-      'passcode',
-      'any-biometry',
-      'any-biometry-or-passcode',
-      'any-biometry-and-passcode',
-      'current-biometry',
-      'current-biometry-and-passcode'
+      'none', 'passcode', 'any-biometry', 'any-biometry-or-passcode',
+      'any-biometry-and-passcode', 'current-biometry', 'current-biometry-and-passcode'
     ];
-    
     return validControls.includes(accessControl);
   }
 
-  recipientToAgeFormat(publicKey: Uint8Array, type: 'piv-p256' | 'p256tag'): string {
-    const keyBase64 = Buffer.from(publicKey).toString('base64');
-    
-    if (type === 'piv-p256') {
-      return `age1se1${keyBase64}`;
-    } else {
-      return `age1p256tag1${keyBase64}`;
-    }
+  recipientToAgeFormat(publicKey: Uint8Array): string {
+    const { encodeRecipient, compressPublicKey } = require('../format-utils');
+    return encodeRecipient(compressPublicKey(publicKey));
   }
 
-  /**
-   * Decode CLI-generated identity
-   * The CLI uses a custom encoding that we'll treat as opaque
-   */
-  private decodeBech32(encoded: string): Uint8Array {
-    // For CLI-generated identities, we can't decode them directly
-    // since they use a complex Bech32 format. We'll create a minimal
-    // representation that indicates this is a CLI identity.
-    
-    // Create a deterministic but minimal representation
-    const hash = this.simpleHash(encoded);
-    return new Uint8Array(hash);
+  parseAgeIdentity(identity: string): { data: Uint8Array; accessControl: string } {
+    const data = decodeIdentity(identity);
+    return {
+      data,
+      accessControl: this.config.accessControl
+    };
   }
-
-  /**
-   * Simple hash function for CLI identities
-   */
-  private simpleHash(input: string): number[] {
-    let hash = 0;
-    for (let i = 0; i < input.length; i++) {
-      const char = input.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-    
-    // Convert to byte array
-    return [
-      (hash >>> 24) & 0xff,
-      (hash >>> 16) & 0xff,
-      (hash >>> 8) & 0xff,
-      hash & 0xff
-    ];
-  }
-
-
-} 
+}
