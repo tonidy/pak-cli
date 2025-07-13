@@ -1,7 +1,5 @@
 # PAK (Password Age Kit) - JavaScript Password Manager
 
-> **📦 Package Moved**: This package has been renamed from `@kdbx/pak-lib` to `@kdbx/pak`. Please update your installations to use the new package name. See [https://www.npmjs.com/package/@kdbx/pak](https://www.npmjs.com/package/@kdbx/pak)
-
 A simple, secure password manager in JavaScript using [age encryption](https://age-encryption.org/). This is a TypeScript port of the shell script from [https://github.com/tonidy/pa-cli](https://github.com/tonidy/pa-cli), providing cross-platform compatibility and modern features.
 
 ## Features
@@ -26,7 +24,7 @@ Or use directly with npx:
 npx @kdbx/pak --help
 ```
 
-> **Note**: Both `pa` and `pak` commands are available after installation.
+> **Note**: Both `pa` and `pak` commands are available after installation. I prefer `pak` because it means "sir" in Bahasa.
 
 ## Usage
 
@@ -34,43 +32,43 @@ npx @kdbx/pak --help
 
 ```bash
 # Add a password (will prompt to generate or enter manually)
-pa add mysite
+pak add mysite
 
 # Show a password
-pa show mysite
+pak show mysite
 
 # List all passwords
-pa list
+pak list
 
 # Edit a password with your $EDITOR
-pa edit mysite
+pak edit mysite
 
 # Delete a password
-pa del mysite
+pak del mysite
 
 # Search passwords with fzf
-pa find
+pak find
 
 # Search and perform action
-pa find show    # or edit, del
+pak find show    # or edit, del
 ```
 
 ### Advanced Usage
 
 ```bash
 # Git operations
-pa git log
-pa git status
+pak git log
+pak git status
 
 # Version information
-pa version
+pak version
 
 # Secure Enclave information (macOS only)
-pa se-info
+pak se-info
 
 # Convert recipients between formats
-pa convert age1se1qfn44rsw... yubikey
-pa convert age1yubikey1qfn44rsw... se
+pak convert age1se1qfn44rsw... yubikey
+pak convert age1yubikey1qfn44rsw... se
 ```
 
 ### Secure Enclave Support (macOS)
@@ -84,7 +82,7 @@ PAK provides comprehensive support for Apple's Secure Enclave through age-plugin
 brew install age-plugin-se
 
 # Verify installation
-pa se-info
+pak se-info
 ```
 
 #### Features
@@ -120,13 +118,13 @@ export PA_SE_AUTO_CONFIRM=1
 
 ```bash
 # Check Secure Enclave support
-pa se-info
+pak se-info
 
 # Generate identity with custom access control
-PA_SE_ACCESS_CONTROL=any-biometry pa add mysite
+PA_SE_ACCESS_CONTROL=any-biometry pak add mysite
 
 # Convert between plugin formats
-pa convert age1se1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak yubikey
+pak convert age1se1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak yubikey
 # Output: age1yubikey1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak
 
 # Use converted recipient for encryption on systems without age-plugin-se
@@ -238,12 +236,20 @@ Configuration is applied in this order (highest priority first):
 3. Environment variables
 4. Default values
 
-#### Age Binary vs JavaScript Library
+#### Age Encryption Backends
 
-PAK supports two age encryption backends:
+PAK supports three age encryption backends:
 
 - **JavaScript Library** (default): Fast, embedded, works without external dependencies
-- **Age Binary**: Full age plugin support (Secure Enclave, YubiKey, etc.)
+- **Native Secure Enclave**: Direct hardware integration for maximum security (macOS only)
+- **Age Binary with Plugins**: Full age plugin support (Secure Enclave, YubiKey, etc.)
+
+**For CLI-based Secure Enclave usage**, you need to install the age-plugin-se:
+
+```bash
+# Install age-plugin-se for CLI backend
+brew install age-plugin-se
+```
 
 The age binary is automatically used when:
 - `useAgeBinary: true` is set in config
@@ -254,7 +260,7 @@ The age binary is automatically used when:
 ```bash
 # Force age binary usage for full plugin support
 export PA_USE_AGE_BINARY=1
-pa add mysite  # Will use age binary with Touch ID support
+pak add mysite  # Will use age binary with Touch ID support
 ```
 
 #### Pure JavaScript Implementation Limitations
@@ -278,7 +284,7 @@ The pure JavaScript implementation has some limitations when working with CLI-ge
 # Example: Using CLI-generated identity with useAgeBinary=false
 # This will show fallback message but still work correctly
 export PA_USE_AGE_BINARY=0
-pa show mysite  # Shows: "SE native decryption failed, falling back to CLI"
+pak show mysite  # Shows: "SE native decryption failed, falling back to CLI"
 ```
 
 ## Platform Support
@@ -414,7 +420,7 @@ export PA_DIR=/path/to/your/existing/pa/directory
 
 3. Verify your Secure Enclave setup:
 ```bash
-pa se-info
+pak se-info
 ```
 
 4. Your existing age-plugin-se identity and recipients files will work seamlessly
@@ -426,10 +432,10 @@ If you have recipients in different formats, you can convert them:
 
 ```bash
 # Convert Secure Enclave recipient to YubiKey format
-pa convert age1se1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak yubikey
+pak convert age1se1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak yubikey
 
 # Convert YubiKey recipient to Secure Enclave format
-pa convert age1yubikey1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak se
+pak convert age1yubikey1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak se
 ```
 
 ## Contributing
