@@ -267,29 +267,6 @@ export PA_USE_AGE_BINARY=1
 pak add mysite  # Will use age binary with Touch ID support
 ```
 
-#### Pure JavaScript Implementation Limitations
-
-The pure JavaScript implementation has some limitations when working with CLI-generated identities:
-
-- **CLI-generated identities**: Cannot encrypt/decrypt with identities created by the `age` or `age-plugin-se` command-line tools
-- **Identity format incompatibility**: CLI tools use Bech32 encoding format, while pure JS uses a different internal format
-- **Automatic fallback**: When pure JS fails, PAK automatically falls back to the CLI binary
-- **Expected behavior**: The message "SE native decryption failed, falling back to CLI" is normal when using CLI-generated identities
-
-**Compatible combinations:**
-- ✅ Pure JS with JS-generated identities
-- ✅ CLI binary with any identity format
-- ✅ Automatic fallback from pure JS to CLI
-
-**Incompatible combinations:**
-- ❌ Pure JS with CLI-generated identities (will auto-fallback to CLI)
-
-```bash
-# Example: Using CLI-generated identity with useAgeBinary=false
-# This will show fallback message but still work correctly
-export PA_USE_AGE_BINARY=0
-pak show mysite  # Shows: "SE native decryption failed, falling back to CLI"
-```
 
 ## Platform Support
 
