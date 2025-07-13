@@ -13,7 +13,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "npm run build:native && tsc && cp -r native dist/",
+    "build": "npm run build:native && tsc && rm -rf dist/native && cp -r native dist/",
     "build:watch": "tsc --watch",
     "build:native": "./scripts/build-native.sh",
     "build:swift": "cd native && npm run build-swift",

@@ -1,6 +1,7 @@
 {
+  "seBackend": "js",
   "useAgeBinary": false,
-  "useNativeSecureEnclave": true,
+  "useNativeSecureEnclave": false,
   "seAccessControl": "any-biometry-or-passcode",
-  "seAutoConfirm": false
+  "seAutoConfirm": true
 }

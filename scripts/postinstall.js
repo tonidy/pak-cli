@@ -8,6 +8,29 @@ function log(message) {
   console.log(`[postinstall] ${message}`);
 }
 
+function showCliBackendInfo() {
+  log('');
+  log('📋 CLI Backend Setup Instructions:');
+  log('');
+  log('PAK will use the CLI backend instead of native module.');
+  log('To enable full functionality, install the following tools:');
+  log('');
+  log('1. Install age (encryption tool):');
+  log('   macOS:   brew install age');
+  log('   Linux:   sudo apt install age  # or equivalent package manager');
+  log('   Windows: scoop install age     # or download from https://github.com/FiloSottile/age/releases');
+  log('');
+  log('2. Install age-plugin-se (Secure Enclave support, macOS only):');
+  log('   brew install age-plugin-se');
+  log('');
+  log('3. Verify installation:');
+  log('   pa se-info  # Check Secure Enclave support');
+  log('   pa --help   # Verify PAK is working');
+  log('');
+  log('For more information, visit: https://github.com/tonidy/pak-lib');
+  log('');
+}
+
 function checkSwiftAvailable() {
   try {
     execSync('swift --version', { stdio: 'pipe' });
@@ -109,6 +132,7 @@ async function main() {
   // Only attempt to build on macOS
   if (process.platform !== 'darwin') {
     log('Non-macOS platform detected, skipping native module build');
+    showCliBackendInfo();
     return;
   }
 
@@ -118,6 +142,7 @@ async function main() {
   if (!checkSwiftAvailable()) {
     log('Swift compiler not found, skipping native module build');
     log('To enable native Secure Enclave support, install Xcode or Swift toolchain');
+    showCliBackendInfo();
     return;
   }
   log('✓ Swift compiler found');
@@ -126,6 +151,7 @@ async function main() {
   if (!checkXcodeAvailable()) {
     log('Xcode command line tools not found, skipping native module build');
     log('To enable native Secure Enclave support, run: xcode-select --install');
+    showCliBackendInfo();
     return;
   }
   log('✓ Xcode command line tools found');
@@ -138,15 +164,18 @@ async function main() {
       log('Native Secure Enclave support enabled');
     } else {
       log('Native module build failed, falling back to CLI backend');
+      showCliBackendInfo();
     }
   } catch (error) {
     log(`Native module build error: ${error.message}`);
     log('Falling back to CLI backend');
+    showCliBackendInfo();
   }
 }
 
 // Run the script
 main().catch((error) => {
   log(`Postinstall script failed: ${error.message}`);
+  showCliBackendInfo();
   // Don't exit with error code to avoid breaking package installation
 }); 

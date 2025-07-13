@@ -26,7 +26,8 @@ export class AgeManager {
         accessControl: config.seAccessControl || 'any-biometry-or-passcode',
         recipientType: 'piv-p256',
         useNative: config.useNativeSecureEnclave || false,
-        backend: config.useNativeSecureEnclave ? 'native' : 'auto',
+        // Handle backend selection
+        backend: config.seBackend || (config.useNativeSecureEnclave ? 'native' : 'auto'),
         preferNative: config.useNativeSecureEnclave || false,
         fallbackToCli: !config.useNativeSecureEnclave
       };

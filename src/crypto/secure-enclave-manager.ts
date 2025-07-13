@@ -15,7 +15,7 @@ import { NativeSecureEnclave } from './backend/native-secure-enclave';
 import { PureJSSecureEnclave } from './backend/pure-js-secure-enclave';
 import { CLISecureEnclave } from './backend/age-cli-secure-enclave';
 
-export type SecureEnclaveBackend = 'native' | 'pure-js' | 'cli' | 'auto';
+export type SecureEnclaveBackend = 'native' | 'js' | 'cli' | 'auto';
 
 export interface ExtendedSecureEnclaveConfig extends SecureEnclaveConfig {
   backend?: SecureEnclaveBackend;
@@ -65,11 +65,11 @@ export class SecureEnclaveManager implements AppleSecureEnclaveAPI {
       try {
         this.backend = new PureJSSecureEnclave(this.config);
         if (this.backend && await this.backend.isAvailable()) {
-          this.backendType = 'pure-js';
+          this.backendType = 'js';
           return;
         }
       } catch (error) {
-        console.warn('Pure JS SE backend not available:', error instanceof Error ? error.message : String(error));
+        console.warn('JS SE backend not available:', error instanceof Error ? error.message : String(error));
       }
 
       // Fall back to CLI
@@ -86,7 +86,7 @@ export class SecureEnclaveManager implements AppleSecureEnclaveAPI {
         case 'native':
           this.backend = new NativeSecureEnclave(this.config);
           break;
-        case 'pure-js':
+        case 'js':
           this.backend = new PureJSSecureEnclave(this.config);
           break;
         case 'cli':

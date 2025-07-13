@@ -16,6 +16,8 @@ export interface PakConfig {
   seAccessControl?: 'none' | 'passcode' | 'any-biometry' | 'any-biometry-or-passcode' | 'any-biometry-and-passcode' | 'current-biometry' | 'current-biometry-and-passcode';
   seAutoConfirm?: boolean;
   useNativeSecureEnclave?: boolean;
+  // Backend selection - allows explicit backend choice
+  seBackend?: 'native' | 'js' | 'cli' | 'auto';
 }
 
 export interface VersionInfo {
@@ -94,7 +96,7 @@ export interface SecureEnclaveConfig {
   accessControl: 'none' | 'passcode' | 'any-biometry' | 'any-biometry-or-passcode' | 'any-biometry-and-passcode' | 'current-biometry' | 'current-biometry-and-passcode';
   recipientType: 'piv-p256' | 'p256tag';
   useNative: boolean;
-  backend?: 'native' | 'pure-js' | 'cli' | 'auto';
+  backend?: 'native' | 'js' | 'cli' | 'auto';
   preferNative?: boolean;
   fallbackToCli?: boolean;
 }

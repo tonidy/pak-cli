@@ -82,6 +82,8 @@ export class PasswordManager {
       // Secure Enclave configuration
       ...(process.env.PA_SE_ACCESS_CONTROL && this.validateSeAccessControl(process.env.PA_SE_ACCESS_CONTROL) && { seAccessControl: process.env.PA_SE_ACCESS_CONTROL as any }),
       ...(process.env.PA_SE_AUTO_CONFIRM && { seAutoConfirm: process.env.PA_SE_AUTO_CONFIRM === '1' }),
+      // Backend selection
+      ...(process.env.PA_SE_BACKEND && this.validateSeBackend(process.env.PA_SE_BACKEND) && { seBackend: process.env.PA_SE_BACKEND as any }),
       // Apply config from file (merges with defaults and env vars)
       ...configFromFile,
       // Apply custom config (highest priority)
@@ -835,6 +837,11 @@ export class PasswordManager {
     ];
     
     return validControls.includes(accessControl);
+  }
+
+  private validateSeBackend(backend: string): boolean {
+    const validBackends = ['native', 'js', 'cli', 'auto'];
+    return validBackends.includes(backend);
   }
 
   private getGitInfo(): GitInfo {

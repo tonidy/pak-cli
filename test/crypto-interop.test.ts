@@ -15,7 +15,7 @@ import { describe, it, before } from 'mocha';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const backendsToTest: SecureEnclaveBackend[] = ['pure-js', 'cli', 'native'];
+const backendsToTest: SecureEnclaveBackend[] = ['js', 'cli', 'native'];
 
 // Only run native tests on macOS
 if (process.platform !== 'darwin') {
@@ -57,21 +57,21 @@ describe('Cross-Backend Crypto Interoperability', function () {
                         return;
                     }
                     
-                    // Skip CLI -> pure-js/native due to incompatible identity formats
-                    if (keyGenBackend === 'cli' && (cryptBackend === 'pure-js' || cryptBackend === 'native')) {
+                    // Skip CLI -> js/native due to incompatible identity formats
+                    if (keyGenBackend === 'cli' && (cryptBackend === 'js' || cryptBackend === 'native')) {
                         console.log(`[TEST] Skipping: CLI identity format incompatible with ${cryptBackend} backend`);
                         return;
                     }
                     
-                    // Skip pure-js/native -> CLI due to incompatible identity formats
-                    if ((keyGenBackend === 'pure-js' || keyGenBackend === 'native') && cryptBackend === 'cli') {
+                    // Skip js/native -> CLI due to incompatible identity formats
+                    if ((keyGenBackend === 'js' || keyGenBackend === 'native') && cryptBackend === 'cli') {
                         console.log(`[TEST] Skipping: ${keyGenBackend} identity format incompatible with CLI backend`);
                         return;
                     }
                     
-                    // Skip native -> pure-js due to hardware-bound keys
-                    if (keyGenBackend === 'native' && cryptBackend === 'pure-js') {
-                        console.log(`[TEST] Skipping: native backend uses hardware-bound keys that cannot be exported to pure-js`);
+                    // Skip native -> js due to hardware-bound keys
+                    if (keyGenBackend === 'native' && cryptBackend === 'js') {
+                        console.log(`[TEST] Skipping: native backend uses hardware-bound keys that cannot be exported to js`);
                         return;
                     }
                     

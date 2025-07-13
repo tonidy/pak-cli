@@ -6,17 +6,41 @@
  * Command-line interface for the JavaScript pa password manager
  */
 
-import { Command } from 'commander';
+import { program } from 'commander';
 import { PasswordManager } from './password-manager';
 import { PaError } from './types';
 
-const program = new Command();
-
-// Set up the CLI program
+// Global options
 program
-  .name('pa')
-  .description('a simple password manager')
-  .version('1.0.0');
+  .option('-b, --backend <backend>', 'Secure Enclave backend to use: native, js, cli, auto', 'auto')
+  .option('--use-age-binary', 'Force use of age binary (CLI backend)')
+  .option('--no-use-age-binary', 'Disable age binary usage')
+  .option('--use-native-se', 'Force use of native Secure Enclave')
+  .option('--no-use-native-se', 'Disable native Secure Enclave')
+  .version('0.3.4', '-v, --version', 'Show version')
+  .description('PAK (Password Age Kit) - A simple password manager using age encryption');
+
+// Helper function to get configuration from global options
+function getConfigFromOptions(options: any) {
+  const config: any = {};
+  
+  // Backend selection
+  if (options.backend && options.backend !== 'auto') {
+    config.seBackend = options.backend;
+  }
+  
+  // Age binary configuration
+  if (options.useAgeBinary !== undefined) {
+    config.useAgeBinary = options.useAgeBinary;
+  }
+  
+  // Native SE configuration
+  if (options.useNativeSe !== undefined) {
+    config.useNativeSecureEnclave = options.useNativeSe;
+  }
+  
+  return config;
+}
 
 // Add command
 program
@@ -26,9 +50,10 @@ program
   .option('-g, --generate', 'Generate a password automatically', true)
   .option('-l, --length <length>', 'Password length', '50')
   .option('-p, --pattern <pattern>', 'Password pattern', 'A-Za-z0-9-_')
-  .action(async (name: string, options) => {
+  .action(async (name: string, options, command) => {
     try {
-      const pm = new PasswordManager();
+      const config = getConfigFromOptions(command.parent?.opts() || {});
+      const pm = new PasswordManager({ config });
       await pm.add(name, {
         generate: options.generate,
         length: parseInt(options.length),
@@ -44,86 +69,17 @@ program
     }
   });
 
-// Delete command
+// Show command
 program
-  .command('del <name>')
-  .alias('d')
-  .description('Delete a password entry')
-  .action(async (name: string) => {
+  .command('show <name>')
+  .alias('s')
+  .description('Show password for an entry')
+  .action(async (name: string, _, command) => {
     try {
-      const pm = new PasswordManager();
-      await pm.delete(name);
-    } catch (error) {
-      if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
-      } else {
-        console.error(`pa: ${error}.`);
-      }
-      process.exit(1);
-    }
-  });
-
-// Edit command
-program
-  .command('edit <name>')
-  .alias('e')
-  .description('Edit a password entry with $EDITOR (default: vi)')
-  .action(async (name: string) => {
-    try {
-      const pm = new PasswordManager();
-      await pm.edit(name);
-    } catch (error) {
-      if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
-      } else {
-        console.error(`pa: ${error}.`);
-      }
-      process.exit(1);
-    }
-  });
-
-// Find command
-program
-  .command('find [command]')
-  .alias('f')
-  .description('Fuzzy search passwords with fzf (show|edit|del)')
-  .action(async (command?: string) => {
-    try {
-      const pm = new PasswordManager();
-      let findCommand: 'show' | 'edit' | 'del' | undefined;
-      
-      if (command) {
-        if (command.startsWith('s')) {
-          findCommand = 'show';
-        } else if (command.startsWith('e')) {
-          findCommand = 'edit';
-        } else if (command.startsWith('d')) {
-          findCommand = 'del';
-        } else {
-          throw new PaError(`unsupported find command '${command}'. Use: show, edit, del`);
-        }
-      }
-      
-      await pm.find(findCommand ? { command: findCommand } : {});
-    } catch (error) {
-      if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
-      } else {
-        console.error(`pa: ${error}.`);
-      }
-      process.exit(1);
-    }
-  });
-
-// Git command
-program
-  .command('git <args...>')
-  .alias('g')
-  .description('Run git command in the password dir')
-  .action(async (args: string[]) => {
-    try {
-      const pm = new PasswordManager();
-      await pm.git(args);
+      const config = getConfigFromOptions(command.parent?.opts() || {});
+      const pm = new PasswordManager({ config });
+      const password = await pm.show(name);
+      console.log(password);
     } catch (error) {
       if (error instanceof PaError) {
         console.error(`pa: ${error.message}.`);
@@ -138,12 +94,17 @@ program
 program
   .command('list')
   .alias('l')
-  .description('List all entries')
-  .action(async () => {
+  .description('List all password entries')
+  .action(async (_, command) => {
     try {
-      const pm = new PasswordManager();
-      const entries = await pm.list();
-      entries.forEach(entry => console.log(entry));
+      const config = getConfigFromOptions(command.parent?.opts() || {});
+      const pm = new PasswordManager({ config });
+      const passwords = await pm.list();
+      if (passwords.length === 0) {
+        console.log('no passwords found');
+      } else {
+        passwords.forEach(p => console.log(p));
+      }
     } catch (error) {
       if (error instanceof PaError) {
         console.error(`pa: ${error.message}.`);
@@ -154,16 +115,16 @@ program
     }
   });
 
-// Show command
+// Edit command
 program
-  .command('show <name>')
-  .alias('s')
-  .description('Show password for an entry')
-  .action(async (name: string) => {
+  .command('edit <name>')
+  .alias('e')
+  .description('Edit a password entry with $EDITOR')
+  .action(async (name: string, _, command) => {
     try {
-      const pm = new PasswordManager();
-      const password = await pm.show(name);
-      console.log(password);
+      const config = getConfigFromOptions(command.parent?.opts() || {});
+      const pm = new PasswordManager({ config });
+      await pm.edit(name);
     } catch (error) {
       if (error instanceof PaError) {
         console.error(`pa: ${error.message}.`);
@@ -174,14 +135,16 @@ program
     }
   });
 
-// Secure Enclave info command
+// Delete command
 program
-  .command('se-info')
-  .description('Show Secure Enclave support information')
-  .action(async () => {
+  .command('del <name>')
+  .alias('d')
+  .description('Delete a password entry')
+  .action(async (name: string, _, command) => {
     try {
-      const pm = new PasswordManager();
-      await pm.getSecureEnclaveInfo();
+      const config = getConfigFromOptions(command.parent?.opts() || {});
+      const pm = new PasswordManager({ config });
+      await pm.delete(name);
     } catch (error) {
       if (error instanceof PaError) {
         console.error(`pa: ${error.message}.`);
@@ -192,20 +155,36 @@ program
     }
   });
 
-// Convert recipient command
+// Find command
 program
-  .command('convert <recipient> <format>')
-  .description('Convert recipient between Secure Enclave and YubiKey formats')
-  .action(async (recipient: string, format: string) => {
+  .command('find [command]')
+  .alias('f')
+  .description('Fuzzy search passwords with fzf')
+  .action(async (cmd: string, _, command) => {
     try {
-      const pm = new PasswordManager();
-      
-      if (format !== 'se' && format !== 'yubikey') {
-        throw new PaError(`invalid format '${format}'. Use 'se' or 'yubikey'`);
+      const config = getConfigFromOptions(command.parent?.opts() || {});
+      const pm = new PasswordManager({ config });
+      await pm.find({ command: cmd as 'show' | 'edit' | 'del' });
+    } catch (error) {
+      if (error instanceof PaError) {
+        console.error(`pa: ${error.message}.`);
+      } else {
+        console.error(`pa: ${error}.`);
       }
-      
-      const convertedRecipient = await pm.convertRecipient(recipient, format as 'se' | 'yubikey');
-      console.log(convertedRecipient);
+      process.exit(1);
+    }
+  });
+
+// Git command
+program
+  .command('git [args...]')
+  .alias('g')
+  .description('Run git command in the password directory')
+  .action(async (args: string[], _, command) => {
+    try {
+      const config = getConfigFromOptions(command.parent?.opts() || {});
+      const pm = new PasswordManager({ config });
+      await pm.git(args);
     } catch (error) {
       if (error instanceof PaError) {
         console.error(`pa: ${error.message}.`);
@@ -221,14 +200,58 @@ program
   .command('version')
   .alias('v')
   .description('Show version information')
-  .action(() => {
+  .action(async (_, command) => {
     try {
-      const pm = new PasswordManager();
+      const config = getConfigFromOptions(command.parent?.opts() || {});
+      const pm = new PasswordManager({ config });
       const version = pm.getVersion();
-      
       console.log(`pa version: ${version.version}`);
       console.log(`release date: ${version.releaseDate}`);
       console.log(`commit: ${version.commit}`);
+    } catch (error) {
+      if (error instanceof PaError) {
+        console.error(`pa: ${error.message}.`);
+      } else {
+        console.error(`pa: ${error}.`);
+      }
+      process.exit(1);
+    }
+  });
+
+// SE Info command
+program
+  .command('se-info')
+  .description('Show Secure Enclave support information')
+  .action(async (_, command) => {
+    try {
+      const config = getConfigFromOptions(command.parent?.opts() || {});
+      const pm = new PasswordManager({ config });
+      await pm.getSecureEnclaveInfo();
+    } catch (error) {
+      if (error instanceof PaError) {
+        console.error(`pa: ${error.message}.`);
+      } else {
+        console.error(`pa: ${error}.`);
+      }
+      process.exit(1);
+    }
+  });
+
+// Convert command
+program
+  .command('convert <recipient> <format>')
+  .description('Convert recipient between formats (se/yubikey)')
+  .action(async (recipient: string, format: string, _, command) => {
+    try {
+      const config = getConfigFromOptions(command.parent?.opts() || {});
+      const pm = new PasswordManager({ config });
+      
+      if (format !== 'se' && format !== 'yubikey') {
+        throw new PaError(`invalid format '${format}'. Use 'se' or 'yubikey'`);
+      }
+      
+      const converted = await pm.convertRecipient(recipient, format as 'se' | 'yubikey');
+      console.log(converted);
     } catch (error) {
       if (error instanceof PaError) {
         console.error(`pa: ${error.message}.`);
@@ -280,6 +303,13 @@ program.configureHelp({
     se-info       - Show Secure Enclave support information.
     convert <recipient> <format> - Convert recipient between 'se' and 'yubikey' formats.
 
+  global options:
+    -b, --backend <backend>     - Set Secure Enclave backend: native, js, cli, auto (default: auto)
+    --use-age-binary        - Force use of age binary (CLI backend)
+    --no-use-age-binary     - Disable age binary usage
+    --use-native-se         - Force use of native Secure Enclave
+    --no-use-native-se      - Disable native Secure Enclave
+
   env vars:
     data directory:   export PA_DIR=~/.local/share/pa
     password length:  export PA_LENGTH=50
@@ -287,16 +317,25 @@ program.configureHelp({
     disable tracking: export PA_NOGIT=
     disable keyring:  export PA_NO_KEYRING=1
     editor command:   export EDITOR=nano
+    age binary:       export PA_USE_AGE_BINARY=1
+    age binary path:  export PA_AGE_BINARY_PATH=/opt/homebrew/bin/age
 
   secure enclave env vars:
     access control:   export PA_SE_ACCESS_CONTROL=any-biometry-or-passcode
     auto confirm:     export PA_SE_AUTO_CONFIRM=1
+    backend:          export PA_SE_BACKEND=native (native|js|cli|auto)
 
   platform support:
     - macOS: Keychain integration, Secure Enclave (age-plugin-se)
     - Linux: libsecret/secret-tool integration
     - Windows: Credential Manager integration (WSL/MSYS2/Cygwin)
     - Hardware: YubiKey (age-plugin-yubikey) on all platforms
+
+  backend selection:
+    native    - Use native Swift Secure Enclave addon (fastest, hardware-backed)
+    js        - Use pure JavaScript implementation (fast, software-based)
+    cli       - Use age-plugin-se binary (slowest, hardware-backed)
+    auto      - Automatically choose best available backend (default)
 `;
   }
 });
