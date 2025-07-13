@@ -1,6 +1,6 @@
 {
   "name": "@kdbx/pak-lib",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "PAK (Password Age Kit) - A simple, secure password manager in JavaScript using age encryption.",
   "main": "dist/src/index.js",
   "bin": {
