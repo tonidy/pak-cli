@@ -4,7 +4,8 @@
   "description": "PAK (Password Age Kit) - A simple, secure password manager in JavaScript using age encryption.",
   "main": "dist/src/index.js",
   "bin": {
-    "pa": "dist/src/cli.js"
+    "pa": "dist/src/cli.js",
+    "pak": "dist/src/cli.js"
   },
   "files": [
     "dist/",

@@ -1,5 +1,7 @@
 # PAK (Password Age Kit) - JavaScript Password Manager
 
+> **📦 Package Moved**: This package has been renamed from `@kdbx/pak-lib` to `@kdbx/pak`. Please update your installations to use the new package name. See [https://www.npmjs.com/package/@kdbx/pak](https://www.npmjs.com/package/@kdbx/pak)
+
 A simple, secure password manager in JavaScript using [age encryption](https://age-encryption.org/). This is a TypeScript port of the shell script from [https://github.com/tonidy/pa-cli](https://github.com/tonidy/pa-cli), providing cross-platform compatibility and modern features.
 
 ## Features
@@ -23,6 +25,8 @@ Or use directly with npx:
 ```bash
 npx @kdbx/pak-lib --help
 ```
+
+> **Note**: Both `pa` and `pak` commands are available after installation.
 
 ## Usage
 
@@ -140,7 +144,7 @@ echo "secret" | age -r age1yubikey1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh8
 Use the SE integration programmatically:
 
 ```javascript
-const { AgeManager, AppleSecureEnclave } = require('pak-lib');
+const { AgeManager, AppleSecureEnclave } = require('@kdbx/pak-lib');
 
 // Initialize with SE support
 const config = {
@@ -347,8 +351,8 @@ await pm.delete('mysite');
 ### Building from Source
 
 ```bash
-git clone https://github.com/tonidy/pak-lib.git
-cd pak-lib
+git clone https://github.com/tonidy/pak-cli.git
+cd pak-cli
 npm install
 npm run build
 ```
