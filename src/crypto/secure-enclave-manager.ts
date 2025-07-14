@@ -21,6 +21,7 @@ export interface ExtendedSecureEnclaveConfig extends SecureEnclaveConfig {
   backend?: SecureEnclaveBackend;
   preferNative?: boolean;
   fallbackToCli?: boolean;
+  useAgeBinary?: boolean;
 }
 
 export class SecureEnclaveManager implements AppleSecureEnclaveAPI {
@@ -90,6 +91,11 @@ export class SecureEnclaveManager implements AppleSecureEnclaveAPI {
           this.backend = new PureJSSecureEnclave(this.config);
           break;
         case 'cli':
+          // Check for contradictory configuration
+          if (this.config.useAgeBinary === false) {
+            console.log('⚠️  Warning: CLI backend explicitly selected but age binary usage disabled.');
+            console.log('   CLI backend inherently requires age binary. Using CLI backend anyway.');
+          }
           this.backend = new CLISecureEnclave(this.config, this.pluginPath);
           break;
         default:

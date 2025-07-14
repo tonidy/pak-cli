@@ -120,10 +120,30 @@ export class NativeSecureEnclave implements AppleSecureEnclaveAPI {
   }
 
   async loadKeyPair(identity: string): Promise<SecureEnclaveKeyPair> {
+    // Check if this is a CLI-generated identity (very long format)
+    if (identity.length > 200) {
+      throw new Error(`CLI-generated identity detected (length: ${identity.length}). CLI-generated identities are not compatible with Native backend. Please use CLI backend with --use-age-binary flag or regenerate keys with Native backend.`);
+    }
+    
     // Look up the actual key data from our mapping using the identity string
-    const privateKeyData = this.keyMapping?.get(identity);
+    let privateKeyData = this.keyMapping?.get(identity);
+    
     if (!privateKeyData) {
-      throw new Error('Key not found in mapping. Native keys must be generated in the same session.');
+      // For pre-existing identities, try to decode and use the embedded key data
+      try {
+        console.log('[NATIVE] Key not found in mapping, attempting to decode pre-existing identity...');
+        const decodedData = decodeIdentity(identity);
+        
+        if (decodedData.length >= 32) {
+          // Use the decoded data as private key data, but this won't be hardware-backed
+          console.warn('[NATIVE] Warning: Using software-based key from pre-existing identity. Key is not hardware-backed.');
+          privateKeyData = Buffer.from(decodedData.slice(0, 32));
+        } else {
+          throw new Error('Decoded identity too short to contain valid key material');
+        }
+      } catch (error) {
+        throw new Error(`Native backend cannot load pre-existing identity: ${error instanceof Error ? error.message : String(error)}. Please regenerate keys with Native backend for hardware-backed security.`);
+      }
     }
     
     // The public key must be derived from the private key via the native addon
@@ -196,13 +216,33 @@ export class NativeSecureEnclave implements AppleSecureEnclaveAPI {
   async decrypt(ciphertext: Uint8Array, privateKeyRef: string): Promise<Uint8Array> {
     console.log('[NATIVE] Decrypt called with privateKeyRef:', privateKeyRef?.substring(0, 50) + '...');
     
+    // Check if this is a CLI-generated identity (very long format)
+    if (privateKeyRef.length > 200) {
+      throw new Error(`CLI-generated identity detected (length: ${privateKeyRef.length}). CLI-generated identities are not compatible with Native backend. Please use CLI backend with --use-age-binary flag.`);
+    }
+    
     // Look up the actual key data from our mapping using the identity string
-    const privateKeyData = this.keyMapping?.get(privateKeyRef);
+    let privateKeyData = this.keyMapping?.get(privateKeyRef);
+    
     if (!privateKeyData) {
-      console.error('[NATIVE] Key not found in mapping!');
-      console.error('  - Looking for:', privateKeyRef?.substring(0, 50) + '...');
-      console.error('  - Available keys:', this.keyMapping ? Array.from(this.keyMapping.keys()).map(k => k.substring(0, 50) + '...') : []);
-      throw new Error('Native backend requires keys to be generated in the same session due to Secure Enclave constraints.');
+      // For pre-existing identities, try to decode and use the embedded key data
+      try {
+        console.log('[NATIVE] Key not found in mapping, attempting to decode pre-existing identity...');
+        const decodedData = decodeIdentity(privateKeyRef);
+        
+        if (decodedData.length >= 32) {
+          // Use the decoded data as private key data, but this won't be hardware-backed
+          console.warn('[NATIVE] Warning: Using software-based key from pre-existing identity for decryption.');
+          privateKeyData = Buffer.from(decodedData.slice(0, 32));
+        } else {
+          throw new Error('Decoded identity too short to contain valid key material');
+        }
+      } catch (error) {
+        console.error('[NATIVE] Key not found in mapping!');
+        console.error('  - Looking for:', privateKeyRef?.substring(0, 50) + '...');
+        console.error('  - Available keys:', this.keyMapping ? Array.from(this.keyMapping.keys()).map(k => k.substring(0, 50) + '...') : []);
+        throw new Error(`Native backend cannot decrypt with pre-existing identity: ${error instanceof Error ? error.message : String(error)}. Please regenerate keys with Native backend.`);
+      }
     }
     
     // Parse the age file format

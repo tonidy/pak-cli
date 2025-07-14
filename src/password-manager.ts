@@ -116,13 +116,21 @@ export class PasswordManager {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
-    // Check if age and age-keygen are available
+    // Only check for age binary when it's actually needed
     const capabilities = await this.getPlatformCapabilities();
-    if (!capabilities.age) {
-      throw new PaError('age not found, install per https://age-encryption.org');
-    }
-    if (!capabilities.ageKeygen) {
-      throw new PaError('age-keygen not found, install per https://age-encryption.org');
+    
+    // Check if age binary is required based on configuration
+    const needsAgeBinary = this.config.useAgeBinary || 
+                          this.config.seBackend === 'cli' ||
+                          (this.config.seBackend === 'auto' && !this.explicitlyDisabledAgeBinary);
+    
+    if (needsAgeBinary) {
+      if (!capabilities.age) {
+        throw new PaError('age not found, install per https://age-encryption.org');
+      }
+      if (!capabilities.ageKeygen) {
+        throw new PaError('age-keygen not found, install per https://age-encryption.org');
+      }
     }
 
     // Create directories
@@ -615,14 +623,29 @@ export class PasswordManager {
       try {
         const identityContent = await this.fileManager.read(this.identitiesFile);
         if (identityContent.includes('AGE-PLUGIN-SE-') || identityContent.includes('AGE-PLUGIN-YUBIKEY-')) {
-          // Check if user explicitly disabled age binary or wants to use native SE
-          if (this.explicitlyDisabledAgeBinary) {
-            console.log('Detected age plugin identities, but useAgeBinary explicitly set to false - using pure JS SE implementation');
-          } else if (this.config.useNativeSecureEnclave && identityContent.includes('AGE-PLUGIN-SE-')) {
-            console.log('Detected SE identities with native SE enabled - using native implementation');
+          // Check for CLI-generated identities (very long format)
+          const identityLines = identityContent.split('\n').filter(line => line.startsWith('AGE-PLUGIN-SE-'));
+          const hasCliGeneratedIdentities = identityLines.some(line => line.length > 200);
+          
+          if (hasCliGeneratedIdentities) {
+            if (this.explicitlyDisabledAgeBinary) {
+              console.log('⚠️  Warning: Detected CLI-generated identities, but age binary was explicitly disabled.');
+              console.log('   CLI-generated identities are not compatible with Pure JS or Native backends.');
+              console.log('   Consider using --use-age-binary flag or regenerating keys with current backend.');
+            } else {
+              console.log('Detected CLI-generated identities, auto-enabling age binary for compatibility');
+              this.config.useAgeBinary = true;
+            }
           } else {
-            console.log('Detected age plugin identities, auto-enabling age binary');
-            this.config.useAgeBinary = true;
+            // Check if user explicitly disabled age binary or wants to use native SE
+            if (this.explicitlyDisabledAgeBinary) {
+              console.log('Detected age plugin identities, but useAgeBinary explicitly set to false - using pure JS SE implementation');
+            } else if (this.config.useNativeSecureEnclave && identityContent.includes('AGE-PLUGIN-SE-')) {
+              console.log('Detected SE identities with native SE enabled - using native implementation');
+            } else {
+              console.log('Detected age plugin identities, auto-enabling age binary');
+              this.config.useAgeBinary = true;
+            }
           }
         }
       } catch {

@@ -85,7 +85,29 @@ export class PureJSSecureEnclave {
   async loadKeyPair(identity: string): Promise<SecureEnclaveKeyPair> {
     console.log('[PURE-JS] Loading key pair from identity:', identity.substring(0, 50) + '...');
     
-    const privateKey = decodeIdentity(identity);
+    // Check if this is a CLI-generated identity (very long format)
+    if (identity.length > 200) {
+      throw new Error(`CLI-generated identity detected (length: ${identity.length}). CLI-generated identities are not compatible with Pure JS backend. Please use CLI backend with --use-age-binary flag or regenerate keys with Pure JS backend.`);
+    }
+    
+    let privateKey: Uint8Array;
+    try {
+      privateKey = decodeIdentity(identity);
+      
+      // For CLI-generated identities that contain more than 32 bytes, take first 32 bytes
+      if (privateKey.length > 32) {
+        console.log('[PURE-JS] Identity contains', privateKey.length, 'bytes, extracting first 32 bytes');
+        privateKey = privateKey.slice(0, 32);
+      } else if (privateKey.length !== 32) {
+        throw new Error(`Invalid private key length: expected 32, got ${privateKey.length}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Exceeds length limit')) {
+        throw new Error(`CLI-generated identity is too long for Pure JS backend. Please use CLI backend with --use-age-binary flag or regenerate keys with Pure JS backend.`);
+      }
+      throw error;
+    }
+    
     const publicKey = p256.getPublicKey(privateKey, true);
 
     const recipient = encodeRecipient(publicKey);
@@ -160,12 +182,28 @@ export class PureJSSecureEnclave {
     // Always decode from identity string for stateless operation
     if (privateKeyRef.startsWith('AGE-PLUGIN-SE-') || privateKeyRef.startsWith('age-plugin-se-')) {
       console.log('[PURE-JS] Decoding identity string...');
-      privateKey = decodeIdentity(privateKeyRef);
-      console.log('[PURE-JS] Successfully decoded private key from identity, length:', privateKey.length);
       
-      // Ensure we have exactly 32 bytes for the private key
-      if (privateKey.length !== 32) {
-        throw new Error(`Invalid private key length: expected 32, got ${privateKey.length}`);
+      // Check if this is a CLI-generated identity (very long format)
+      if (privateKeyRef.length > 200) {
+        throw new Error(`CLI-generated identity detected (length: ${privateKeyRef.length}). CLI-generated identities are not compatible with Pure JS backend. Please use CLI backend with --use-age-binary flag or regenerate keys with Pure JS backend.`);
+      }
+      
+      try {
+        privateKey = decodeIdentity(privateKeyRef);
+        console.log('[PURE-JS] Successfully decoded private key from identity, length:', privateKey.length);
+        
+        // For CLI-generated identities that contain more than 32 bytes, take first 32 bytes
+        if (privateKey.length > 32) {
+          console.log('[PURE-JS] Identity contains', privateKey.length, 'bytes, extracting first 32 bytes');
+          privateKey = privateKey.slice(0, 32);
+        } else if (privateKey.length !== 32) {
+          throw new Error(`Invalid private key length: expected 32, got ${privateKey.length}`);
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('Exceeds length limit')) {
+          throw new Error(`CLI-generated identity is too long for Pure JS backend. Please use CLI backend with --use-age-binary flag or regenerate keys with Pure JS backend.`);
+        }
+        throw error;
       }
     } else {
       // If it's a hex string, convert it to Uint8Array

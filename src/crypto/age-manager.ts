@@ -21,7 +21,8 @@ export class AgeManager {
     this.config = config;
     
     // Initialize Apple Secure Enclave if available and enabled
-    if (process.platform === 'darwin' && !config.useAgeBinary) {
+    // Allow initialization when CLI backend is explicitly selected even if useAgeBinary is false
+    if (process.platform === 'darwin' && (!config.useAgeBinary || config.seBackend === 'cli')) {
       const seConfig: ExtendedSecureEnclaveConfig = {
         accessControl: config.seAccessControl || 'any-biometry-or-passcode',
         recipientType: 'piv-p256',
@@ -29,7 +30,9 @@ export class AgeManager {
         // Handle backend selection
         backend: config.seBackend || (config.useNativeSecureEnclave ? 'native' : 'auto'),
         preferNative: config.useNativeSecureEnclave || false,
-        fallbackToCli: !config.useNativeSecureEnclave
+        fallbackToCli: !config.useNativeSecureEnclave,
+        // Pass age binary configuration for contradiction detection
+        useAgeBinary: config.useAgeBinary || false
       };
       this.secureEnclave = new SecureEnclaveManager(seConfig);
     }
@@ -212,8 +215,11 @@ export class AgeManager {
         if (hasJsonFormatIdentities) {
           throw new Error(`Native SE decryption failed: ${error instanceof Error ? error.message : String(error)}. JSON format identities cannot use CLI fallback.`);
         }
-        // Fall back to CLI on error (only for CLI-compatible identities)
-        console.log('SE native decryption failed, falling back to CLI (CLI-generated identities cannot be used by pure JS implementation)');
+        // Log the error but don't actually fall back to CLI if useAgeBinary is disabled
+        console.log('SE native decryption failed:', error instanceof Error ? error.message : String(error));
+        if (!this.config.useAgeBinary) {
+          console.log('CLI fallback disabled by --no-use-age-binary flag');
+        }
       }
     }
     
@@ -237,11 +243,18 @@ export class AgeManager {
     const hasPluginCiphertext = ciphertextString.includes('piv-p256') || ciphertextString.includes('yubikey');
     
     // Only fall back to CLI if we don't have native SE support AND we have plugin content
-    // BUT avoid CLI for JSON format identities
-    if (!this.secureEnclave && (hasPluginIdentities || hasPluginCiphertext)) {
+    // BUT avoid CLI for JSON format identities and respect useAgeBinary setting
+    if (!this.secureEnclave && (hasPluginIdentities || hasPluginCiphertext) && !this.config.useAgeBinary) {
       // Don't use CLI for JSON format identities (they're incompatible)
       if (hasJsonFormatIdentities) {
         throw new Error('Native SE backend not available and JSON format identities cannot use CLI fallback. Please enable native SE backend.');
+      }
+      // Don't use CLI when useAgeBinary is explicitly disabled
+      throw new Error('Plugin identities detected but CLI fallback disabled by --no-use-age-binary. Please enable age binary or use native SE backend.');
+    } else if (!this.secureEnclave && (hasPluginIdentities || hasPluginCiphertext) && this.config.useAgeBinary) {
+      // Don't use CLI for JSON format identities (they're incompatible)
+      if (hasJsonFormatIdentities) {
+        throw new Error('CLI age binary cannot handle JSON format identities. Please use native SE backend or disable useAgeBinary.');
       }
       // Use command-line age for plugin support when native SE is not available
       return await this.decryptWithCLI(ciphertext, identitiesToUse);
@@ -334,8 +347,11 @@ export class AgeManager {
         if (hasJsonFormatIdentities) {
           throw new Error(`Native SE decryption failed: ${error instanceof Error ? error.message : String(error)}. JSON format identities cannot use CLI fallback.`);
         }
-        // Fall back to CLI on error (only for CLI-compatible identities)
-        console.log('SE native decryption failed, falling back to CLI (CLI-generated identities cannot be used by pure JS implementation)');
+        // Log the error but don't actually fall back to CLI if useAgeBinary is disabled
+        console.log('SE native decryption failed:', error instanceof Error ? error.message : String(error));
+        if (!this.config.useAgeBinary) {
+          console.log('CLI fallback disabled by --no-use-age-binary flag');
+        }
       }
     }
     
@@ -355,11 +371,18 @@ export class AgeManager {
     );
     
     // Fall back to CLI for plugin identities (either no native SE or native SE failed)
-    // BUT avoid CLI for JSON format identities
-    if (hasPluginIdentities) {
+    // BUT avoid CLI for JSON format identities and respect useAgeBinary setting
+    if (hasPluginIdentities && !this.config.useAgeBinary) {
       // Don't use CLI for JSON format identities (they're incompatible)
       if (hasJsonFormatIdentities) {
         throw new Error('Native SE backend not available and JSON format identities cannot use CLI fallback. Please enable native SE backend.');
+      }
+      // Don't use CLI when useAgeBinary is explicitly disabled
+      throw new Error('Plugin identities detected but CLI fallback disabled by --no-use-age-binary. Please enable age binary or use native SE backend.');
+    } else if (hasPluginIdentities && this.config.useAgeBinary) {
+      // Don't use CLI for JSON format identities (they're incompatible)
+      if (hasJsonFormatIdentities) {
+        throw new Error('CLI age binary cannot handle JSON format identities. Please use native SE backend or disable useAgeBinary.');
       }
       // Use command-line age for plugin support
       return await this.decryptFileWithCLI(filePath, identitiesToUse);
