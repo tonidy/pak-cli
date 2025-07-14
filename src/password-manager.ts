@@ -24,6 +24,7 @@ import { GitManager } from './git/git-manager';
 import { FileManager } from './utils/file-manager';
 import { RandomGenerator } from './utils/random-generator';
 import { UserInterface } from './utils/user-interface';
+import { log } from './utils/logger';
 
 export class PasswordManager {
   private config: PakConfig;
@@ -208,7 +209,7 @@ export class PasswordManager {
     try {
       const encryptedData = await this.ageManager.encrypt(password);
       await this.fileManager.writeBinary(passwordFile, encryptedData);
-      console.log(`saved '${name}' to the store.`);
+      log.info(`saved '${name}' to the store.`);
     } catch (error) {
       throw new PaError(`couldn't encrypt ${name}.age`);
     }
@@ -354,7 +355,7 @@ export class PasswordManager {
         await this.fileManager.writeBinary(passwordFile, encryptedData);
 
         if (isNew) {
-          console.log(`saved '${name}' to the store.`);
+          log.info(`saved '${name}' to the store.`);
         }
 
         // Git commit if enabled
@@ -403,7 +404,7 @@ export class PasswordManager {
         switch (options.command) {
           case 'show':
             const password = await this.show(selected);
-            console.log(password);
+            log.output(password);
             break;
           case 'edit':
             await this.edit(selected);
@@ -417,7 +418,7 @@ export class PasswordManager {
       } else {
         // Default action is to show
         const password = await this.show(selected);
-        console.log(password);
+        log.output(password);
       }
     } catch (error) {
       if (error instanceof PaError) {
@@ -486,34 +487,34 @@ export class PasswordManager {
   async getSecureEnclaveInfo(): Promise<void> {
     const seInfo = await this.ageManager.getSecureEnclaveInfo();
     
-    console.log('Secure Enclave Information:');
-    console.log(`  Available: ${seInfo.available ? '✓' : '✗'}`);
-    console.log(`  Plugin Installed: ${seInfo.plugin ? '✓' : '✗'}`);
-    console.log(`  Platform Support: ${seInfo.platform ? '✓' : '✗'}`);
+    log.info('Secure Enclave Information:');
+    log.info(`  Available: ${seInfo.available ? '✓' : '✗'}`);
+    log.info(`  Plugin Installed: ${seInfo.plugin ? '✓' : '✗'}`);
+    log.info(`  Platform Support: ${seInfo.platform ? '✓' : '✗'}`);
     
-    if (seInfo.version) {
-      console.log(`  macOS Version: ${seInfo.version}`);
-    }
-    
-    console.log(`  Status: ${seInfo.message}`);
+          if (seInfo.version) {
+        log.info(`  macOS Version: ${seInfo.version}`);
+      }
+      
+      log.info(`  Status: ${seInfo.message}`);
     
     // Show current key information if available
     if (seInfo.available && await this.fileManager.exists(this.identitiesFile)) {
       try {
         const recipients = await this.ageManager.getSecureEnclaveRecipients(this.identitiesFile);
         if (recipients.length > 0) {
-          console.log(`  Current Public Key: ${recipients[0]}`);
+          log.info(`  Current Public Key: ${recipients[0]}`);
           
           // Show YubiKey equivalent if requested
           try {
             const yubiRecipient = this.ageManager.convertSecureEnclaveToYubikey(recipients[0]);
-            console.log(`  YubiKey Equivalent: ${yubiRecipient}`);
+            log.info(`  YubiKey Equivalent: ${yubiRecipient}`);
           } catch {
             // Ignore conversion errors
           }
         }
       } catch (error) {
-        console.log(`  Current Key: Error reading (${error})`);
+        log.info(`  Current Key: Error reading (${error})`);
       }
     }
   }
@@ -599,16 +600,16 @@ export class PasswordManager {
       if (capabilities.secureEnclave) {
         // Only auto-enable age binary if native SE is not available or disabled
         if (!this.config.useAgeBinary && !this.config.useNativeSecureEnclave) {
-          console.log('Auto-enabling age binary for Secure Enclave support');
+          log.debug('Auto-enabling age binary for Secure Enclave support');
           this.config.useAgeBinary = true;
         } else if (this.config.useNativeSecureEnclave) {
-          console.log('Using native Secure Enclave implementation');
+          log.debug('Using native Secure Enclave implementation');
         }
         await this.initializeSecureEnclave();
       } else if (capabilities.yubikey) {
         // Auto-enable age binary for YubiKey support  
         if (!this.config.useAgeBinary) {
-          console.log('Auto-enabling age binary for YubiKey support');
+          log.debug('Auto-enabling age binary for YubiKey support');
           this.config.useAgeBinary = true;
         }
         await this.initializeYubikey();
@@ -629,21 +630,21 @@ export class PasswordManager {
           
           if (hasCliGeneratedIdentities) {
             if (this.explicitlyDisabledAgeBinary) {
-              console.log('⚠️  Warning: Detected CLI-generated identities, but age binary was explicitly disabled.');
-              console.log('   CLI-generated identities are not compatible with Pure JS or Native backends.');
-              console.log('   Consider using --use-age-binary flag or regenerating keys with current backend.');
+                        log.warn('⚠️  Warning: Detected CLI-generated identities, but age binary was explicitly disabled.');
+          log.warn('   CLI-generated identities are not compatible with Pure JS or Native backends.');
+          log.warn('   Consider using --use-age-binary flag or regenerating keys with current backend.');
             } else {
-              console.log('Detected CLI-generated identities, auto-enabling age binary for compatibility');
+                              log.debug('Detected CLI-generated identities, auto-enabling age binary for compatibility');
               this.config.useAgeBinary = true;
             }
           } else {
             // Check if user explicitly disabled age binary or wants to use native SE
             if (this.explicitlyDisabledAgeBinary) {
-              console.log('Detected age plugin identities, but useAgeBinary explicitly set to false - using pure JS SE implementation');
+              log.debug('Detected age plugin identities, but useAgeBinary explicitly set to false - using pure JS SE implementation');
             } else if (this.config.useNativeSecureEnclave && identityContent.includes('AGE-PLUGIN-SE-')) {
-              console.log('Detected SE identities with native SE enabled - using native implementation');
+                              log.debug('Detected SE identities with native SE enabled - using native implementation');
             } else {
-              console.log('Detected age plugin identities, auto-enabling age binary');
+                              log.debug('Detected age plugin identities, auto-enabling age binary');
               this.config.useAgeBinary = true;
             }
           }
@@ -677,7 +678,7 @@ export class PasswordManager {
       this.ageManager.setIdentities(identities);
     } catch (error) {
       // If we can't load identities, we'll create them
-      console.log('Could not load identities, will create new ones if needed');
+              log.debug('Could not load identities, will create new ones if needed');
     }
 
     try {
@@ -685,7 +686,7 @@ export class PasswordManager {
       this.ageManager.setRecipients(recipients);
     } catch (error) {
       // If we can't load recipients, we'll create them
-      console.log('Could not load recipients, will create new ones if needed');
+              log.debug('Could not load recipients, will create new ones if needed');
     }
   }
 
@@ -694,14 +695,14 @@ export class PasswordManager {
     const seInfo = await this.ageManager.getSecureEnclaveInfo();
     
     if (!seInfo.available) {
-      console.log(`Secure Enclave not available: ${seInfo.message}`);
+      log.warn(`Secure Enclave not available: ${seInfo.message}`);
       if (!seInfo.plugin) {
-        console.log('Install age-plugin-se with: brew install age-plugin-se');
+        log.info('Install age-plugin-se with: brew install age-plugin-se');
       }
       return;
     }
     
-    console.log(`✓ ${seInfo.message}`);
+    log.debug(`✓ ${seInfo.message}`);
     
     // Check for environment variable configuration
     const envAccessControl = this.config.seAccessControl;
@@ -715,19 +716,19 @@ export class PasswordManager {
     if (envAccessControl) {
       if (this.ageManager.validateAccessControl(envAccessControl)) {
         accessControl = envAccessControl;
-        console.log(`Using access control from environment: ${accessControl}`);
+        log.debug(`Using access control from environment: ${accessControl}`);
       } else {
-        console.log(`Invalid access control in PA_SE_ACCESS_CONTROL: ${envAccessControl}`);
-        console.log('Valid options: any-biometry, any-biometry-or-passcode, passcode, current-biometry');
+                  log.warn(`Invalid access control in PA_SE_ACCESS_CONTROL: ${envAccessControl}`);
+          log.info('Valid options: any-biometry, any-biometry-or-passcode, passcode, current-biometry');
         return;
       }
     } else {
-      console.log('Choose access control for Secure Enclave key:');
-      console.log('1) any-biometry (Touch ID/Face ID)');
-      console.log('2) any-biometry-or-passcode (Touch ID/Face ID or device passcode)');
-      console.log('3) passcode (device passcode only)');
-      console.log('4) current-biometry (current enrolled biometrics only)');
-      console.log('5) current-biometry-and-passcode (current biometrics AND passcode)');
+      log.output('Choose access control for Secure Enclave key:');
+      log.output('1) any-biometry (Touch ID/Face ID)');
+      log.output('2) any-biometry-or-passcode (Touch ID/Face ID or device passcode)');
+      log.output('3) passcode (device passcode only)');
+      log.output('4) current-biometry (current enrolled biometrics only)');
+      log.output('5) current-biometry-and-passcode (current biometrics AND passcode)');
       
       const choice = await this.userInterface.prompt('Enter choice [1-5, default: 2]');
       
@@ -743,19 +744,19 @@ export class PasswordManager {
     }
     
     try {
-      console.log(`Generating Secure Enclave identity with access control: ${accessControl}`);
+      log.info(`Generating Secure Enclave identity with access control: ${accessControl}`);
       
       await this.ageManager.generateSecureEnclaveIdentity(accessControl, this.identitiesFile);
       
       const recipients = await this.ageManager.getSecureEnclaveRecipients(this.identitiesFile);
       await this.fileManager.write(this.recipientsFile, recipients.join('\n') + '\n');
       
-      console.log('✓ Secure Enclave identity generated successfully');
-      console.log('✓ Recipients file created');
+              log.info('✓ Secure Enclave identity generated successfully');
+        log.info('✓ Recipients file created');
       
       // Show the public key
       if (recipients.length > 0) {
-        console.log(`Public key: ${recipients[0]}`);
+        log.info(`Public key: ${recipients[0]}`);
       }
       
     } catch (error) {
@@ -805,9 +806,9 @@ export class PasswordManager {
           );
           
           if (stored) {
-            console.log('encryption key passphrase stored in system credential store');
+            log.info('encryption key passphrase stored in system credential store');
           } else {
-            console.log('warning: couldn\'t store passphrase in credential store, using file-based storage');
+                          log.warn('warning: couldn\'t store passphrase in credential store, using file-based storage');
             // Regenerate without passphrase
             const newIdentity = await this.ageManager.generateIdentity();
             await this.fileManager.write(this.identitiesFile, newIdentity);

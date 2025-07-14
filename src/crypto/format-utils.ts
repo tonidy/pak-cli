@@ -10,6 +10,7 @@
 
 import { bech32 } from 'bech32';
 import { p256 } from '@noble/curves/p256';
+import { log } from '../utils/logger';
 
 const IDENTITY_PREFIX = 'AGE-PLUGIN-SE-';
 const IDENTITY_PREFIX_LOWERCASE = 'age-plugin-se-';
@@ -18,7 +19,7 @@ const RECIPIENT_PREFIX = 'age1se'; // Use age1se to match age-plugin-se binary
 // Debug logging helper
 function debugLog(operation: string, data: any) {
     if (process.env.DEBUG_CRYPTO) {
-        console.log(`[format-utils] ${operation}:`, data);
+        log.trace(`[format-utils] ${operation}:`, data);
     }
 }
 

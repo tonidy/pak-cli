@@ -433,7 +433,7 @@ MIT License - see LICENSE file for details.
 
 ## Security
 
-If you discover a security vulnerability, please email tonidy@users.noreply.github.com instead of using the issue tracker.
+If you discover a security vulnerability, please report it through [GitHub Security Advisories](https://github.com/tonidy/pak-cli/security/advisories) instead of using the issue tracker or email. This ensures proper handling and responsible disclosure of security issues.
 
 ## Acknowledgments
 

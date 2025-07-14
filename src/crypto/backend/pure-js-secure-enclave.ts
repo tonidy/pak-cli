@@ -26,6 +26,7 @@ import {
   encodeRecipient,
   decodeRecipient,
 } from '../format-utils';
+import { log } from '../../utils/logger';
 
 export class PureJSSecureEnclave {
   private config: SecureEnclaveConfig;
@@ -66,11 +67,11 @@ export class PureJSSecureEnclave {
     const privateKeyRef = Buffer.from(privateKey).toString('hex');
     this.keyStore.set(privateKeyRef, privateKey);
     
-    console.log('[PURE-JS] Generated key pair:');
-    console.log('  - privateKeyRef:', privateKeyRef.substring(0, 20) + '...');
-    console.log('  - identity:', identity.substring(0, 50) + '...');
-    console.log('  - recipient:', recipient);
-    console.log('  - keyStore size:', this.keyStore.size);
+            log.trace('[PURE-JS] Generated key pair:');
+        log.trace('  - privateKeyRef:', privateKeyRef.substring(0, 20) + '...');
+        log.trace('  - identity:', identity.substring(0, 50) + '...');
+        log.trace('  - recipient:', recipient);
+        log.trace('  - keyStore size:', this.keyStore.size);
 
     return {
       identity,
@@ -83,7 +84,7 @@ export class PureJSSecureEnclave {
   }
 
   async loadKeyPair(identity: string): Promise<SecureEnclaveKeyPair> {
-    console.log('[PURE-JS] Loading key pair from identity:', identity.substring(0, 50) + '...');
+            log.trace('[PURE-JS] Loading key pair from identity:', identity.substring(0, 50) + '...');
     
     // Check if this is a CLI-generated identity (very long format)
     if (identity.length > 200) {
@@ -96,7 +97,7 @@ export class PureJSSecureEnclave {
       
       // For CLI-generated identities that contain more than 32 bytes, take first 32 bytes
       if (privateKey.length > 32) {
-        console.log('[PURE-JS] Identity contains', privateKey.length, 'bytes, extracting first 32 bytes');
+        log.trace('[PURE-JS] Identity contains', privateKey.length, 'bytes, extracting first 32 bytes');
         privateKey = privateKey.slice(0, 32);
       } else if (privateKey.length !== 32) {
         throw new Error(`Invalid private key length: expected 32, got ${privateKey.length}`);
@@ -114,10 +115,10 @@ export class PureJSSecureEnclave {
     const privateKeyRef = Buffer.from(privateKey).toString('hex');
     this.keyStore.set(privateKeyRef, privateKey);
     
-    console.log('[PURE-JS] Loaded key:');
-    console.log('  - privateKeyRef:', privateKeyRef.substring(0, 20) + '...');
-    console.log('  - recipient:', recipient);
-    console.log('  - keyStore size:', this.keyStore.size);
+            log.trace('[PURE-JS] Loaded key:');
+        log.trace('  - privateKeyRef:', privateKeyRef.substring(0, 20) + '...');
+        log.trace('  - recipient:', recipient);
+        log.trace('  - keyStore size:', this.keyStore.size);
 
     return {
       identity,
@@ -174,14 +175,14 @@ export class PureJSSecureEnclave {
   }
 
   async decrypt(ciphertext: Uint8Array, privateKeyRef: string): Promise<Uint8Array> {
-    console.log('[PURE-JS] Decrypt called:');
-    console.log('  - privateKeyRef:', privateKeyRef?.substring(0, 20) + '...');
+            log.trace('[PURE-JS] Decrypt called:');
+        log.trace('  - privateKeyRef:', privateKeyRef?.substring(0, 20) + '...');
     
     let privateKey: Uint8Array;
     
     // Always decode from identity string for stateless operation
     if (privateKeyRef.startsWith('AGE-PLUGIN-SE-') || privateKeyRef.startsWith('age-plugin-se-')) {
-      console.log('[PURE-JS] Decoding identity string...');
+                log.trace('[PURE-JS] Decoding identity string...');
       
       // Check if this is a CLI-generated identity (very long format)
       if (privateKeyRef.length > 200) {
@@ -190,12 +191,12 @@ export class PureJSSecureEnclave {
       
       try {
         privateKey = decodeIdentity(privateKeyRef);
-        console.log('[PURE-JS] Successfully decoded private key from identity, length:', privateKey.length);
+                  log.trace('[PURE-JS] Successfully decoded private key from identity, length:', privateKey.length);
         
-        // For CLI-generated identities that contain more than 32 bytes, take first 32 bytes
-        if (privateKey.length > 32) {
-          console.log('[PURE-JS] Identity contains', privateKey.length, 'bytes, extracting first 32 bytes');
-          privateKey = privateKey.slice(0, 32);
+                  // For CLI-generated identities that contain more than 32 bytes, take first 32 bytes
+          if (privateKey.length > 32) {
+            log.trace('[PURE-JS] Identity contains', privateKey.length, 'bytes, extracting first 32 bytes');
+            privateKey = privateKey.slice(0, 32);
         } else if (privateKey.length !== 32) {
           throw new Error(`Invalid private key length: expected 32, got ${privateKey.length}`);
         }
@@ -207,9 +208,9 @@ export class PureJSSecureEnclave {
       }
     } else {
       // If it's a hex string, convert it to Uint8Array
-      console.log('[PURE-JS] Converting hex privateKeyRef to Uint8Array...');
+      log.trace('[PURE-JS] Converting hex privateKeyRef to Uint8Array...');
       privateKey = Buffer.from(privateKeyRef, 'hex');
-      console.log('[PURE-JS] Hex private key length:', privateKey.length);
+      log.trace('[PURE-JS] Hex private key length:', privateKey.length);
       
       // Ensure we have exactly 32 bytes for the private key
       if (privateKey.length !== 32) {

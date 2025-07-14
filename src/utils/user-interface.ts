@@ -3,6 +3,7 @@
  */
 
 import { UserInteraction } from '../types';
+import { log } from './logger';
 
 export class UserInterface implements UserInteraction {
   /**
@@ -30,7 +31,7 @@ export class UserInterface implements UserInteraction {
         rl.close();
         
         // Print the answer since raw mode doesn't echo
-        console.log(answer);
+        log.output(answer);
         
         const normalized = answer.toLowerCase().trim();
         resolve(normalized === 'y' || normalized === 'yes');
@@ -145,7 +146,7 @@ export class UserInterface implements UserInteraction {
    * Display a message to the user
    */
   message(text: string): void {
-    console.log(text);
+    log.output(text);
   }
 
   /**
@@ -166,14 +167,14 @@ export class UserInterface implements UserInteraction {
    * Display a success message
    */
   success(text: string): void {
-    console.log(`✓ ${text}`);
+    log.output(`✓ ${text}`);
   }
 
   /**
    * Display an info message
    */
   info(text: string): void {
-    console.log(`ℹ ${text}`);
+    log.info(`ℹ ${text}`);
   }
 
   /**
@@ -256,15 +257,15 @@ export class UserInterface implements UserInteraction {
     
     // Header
     const headerRow = keys.map((key, i) => key.padEnd(columnWidths[i])).join(' | ');
-    console.log(headerRow);
-    console.log(keys.map((_, i) => '-'.repeat(columnWidths[i])).join('-|-'));
+    log.output(headerRow);
+    log.output(keys.map((_, i) => '-'.repeat(columnWidths[i])).join('-|-'));
     
     // Rows
     data.forEach(row => {
       const rowStr = keys.map((key, i) => 
         String(row[key] || '').padEnd(columnWidths[i])
       ).join(' | ');
-      console.log(rowStr);
+      log.output(rowStr);
     });
   }
 } 

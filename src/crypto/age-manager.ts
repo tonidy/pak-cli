@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PakConfig } from '../types';
 import { SecureEnclaveManager, ExtendedSecureEnclaveConfig } from './secure-enclave-manager';
+import { log } from '../utils/logger';
 
 export class AgeManager {
   private identities: string[] = [];
@@ -216,9 +217,9 @@ export class AgeManager {
           throw new Error(`Native SE decryption failed: ${error instanceof Error ? error.message : String(error)}. JSON format identities cannot use CLI fallback.`);
         }
         // Log the error but don't actually fall back to CLI if useAgeBinary is disabled
-        console.log('SE native decryption failed:', error instanceof Error ? error.message : String(error));
+        log.debug('SE native decryption failed:', error instanceof Error ? error.message : String(error));
         if (!this.config.useAgeBinary) {
-          console.log('CLI fallback disabled by --no-use-age-binary flag');
+          log.debug('CLI fallback disabled by --no-use-age-binary flag');
         }
       }
     }
@@ -348,9 +349,9 @@ export class AgeManager {
           throw new Error(`Native SE decryption failed: ${error instanceof Error ? error.message : String(error)}. JSON format identities cannot use CLI fallback.`);
         }
         // Log the error but don't actually fall back to CLI if useAgeBinary is disabled
-        console.log('SE native decryption failed:', error instanceof Error ? error.message : String(error));
+        log.debug('SE native decryption failed:', error instanceof Error ? error.message : String(error));
         if (!this.config.useAgeBinary) {
-          console.log('CLI fallback disabled by --no-use-age-binary flag');
+          log.debug('CLI fallback disabled by --no-use-age-binary flag');
         }
       }
     }

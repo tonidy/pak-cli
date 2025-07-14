@@ -14,6 +14,7 @@ import {
 import { NativeSecureEnclave } from './backend/native-secure-enclave';
 import { PureJSSecureEnclave } from './backend/pure-js-secure-enclave';
 import { CLISecureEnclave } from './backend/age-cli-secure-enclave';
+import { log } from '../utils/logger';
 
 export type SecureEnclaveBackend = 'native' | 'js' | 'cli' | 'auto';
 
@@ -93,8 +94,8 @@ export class SecureEnclaveManager implements AppleSecureEnclaveAPI {
         case 'cli':
           // Check for contradictory configuration
           if (this.config.useAgeBinary === false) {
-            console.log('⚠️  Warning: CLI backend explicitly selected but age binary usage disabled.');
-            console.log('   CLI backend inherently requires age binary. Using CLI backend anyway.');
+                  log.warn('⚠️  Warning: CLI backend explicitly selected but age binary usage disabled.');
+      log.warn('   CLI backend inherently requires age binary. Using CLI backend anyway.');
           }
           this.backend = new CLISecureEnclave(this.config, this.pluginPath);
           break;

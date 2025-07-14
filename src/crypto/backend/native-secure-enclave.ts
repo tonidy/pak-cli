@@ -23,6 +23,7 @@ import {
   compressPublicKey,
   decompressPublicKey,
 } from '../format-utils';
+import { log } from '../../utils/logger';
 
 // Load the native addon
 let nativeAddon: any;
@@ -103,11 +104,11 @@ export class NativeSecureEnclave implements AppleSecureEnclaveAPI {
     // Store the key mapping using the identity string as the key
     this.keyMapping.set(identity, privateKeyBuffer);
     
-    console.log('[NATIVE] Generated key pair:');
-    console.log(`  - identifierHex: ${keyIdentifier.toString('hex').substring(0, 20)}...`);
-    console.log(`  - identity: ${identity.substring(0, 50)}...`);
-    console.log(`  - recipient: ${recipient}`);
-    console.log(`  - keyMapping size: ${this.keyMapping.size}`);
+          log.trace('[NATIVE] Generated key pair:');
+      log.trace(`  - identifierHex: ${keyIdentifier.toString('hex').substring(0, 20)}...`);
+      log.trace(`  - identity: ${identity.substring(0, 50)}...`);
+      log.trace(`  - recipient: ${recipient}`);
+      log.trace(`  - keyMapping size: ${this.keyMapping.size}`);
 
     return {
       identity,
@@ -131,7 +132,7 @@ export class NativeSecureEnclave implements AppleSecureEnclaveAPI {
     if (!privateKeyData) {
       // For pre-existing identities, try to decode and use the embedded key data
       try {
-        console.log('[NATIVE] Key not found in mapping, attempting to decode pre-existing identity...');
+        log.trace('[NATIVE] Key not found in mapping, attempting to decode pre-existing identity...');
         const decodedData = decodeIdentity(identity);
         
         if (decodedData.length >= 32) {
@@ -189,9 +190,9 @@ export class NativeSecureEnclave implements AppleSecureEnclaveAPI {
     const ephemeralPublicKey = rawEncrypted.slice(0, 64);
     const encryptedData = rawEncrypted.slice(64);
     
-    console.log('[NATIVE] Ephemeral key debug:');
-    console.log('  - Length:', ephemeralPublicKey.length);
-    console.log('  - Hex:', Buffer.from(ephemeralPublicKey).toString('hex').substring(0, 32) + '...');
+          log.trace('[NATIVE] Ephemeral key debug:');
+      log.trace('  - Length:', ephemeralPublicKey.length);
+      log.trace('  - Hex:', Buffer.from(ephemeralPublicKey).toString('hex').substring(0, 32) + '...');
     
     // The ephemeral key is in raw format (64 bytes), compress it
     const ephemeralCompressed = compressPublicKey(ephemeralPublicKey);
@@ -214,7 +215,7 @@ export class NativeSecureEnclave implements AppleSecureEnclaveAPI {
   }
 
   async decrypt(ciphertext: Uint8Array, privateKeyRef: string): Promise<Uint8Array> {
-    console.log('[NATIVE] Decrypt called with privateKeyRef:', privateKeyRef?.substring(0, 50) + '...');
+          log.trace('[NATIVE] Decrypt called with privateKeyRef:', privateKeyRef?.substring(0, 50) + '...');
     
     // Check if this is a CLI-generated identity (very long format)
     if (privateKeyRef.length > 200) {
@@ -227,7 +228,7 @@ export class NativeSecureEnclave implements AppleSecureEnclaveAPI {
     if (!privateKeyData) {
       // For pre-existing identities, try to decode and use the embedded key data
       try {
-        console.log('[NATIVE] Key not found in mapping, attempting to decode pre-existing identity...');
+        log.trace('[NATIVE] Key not found in mapping, attempting to decode pre-existing identity...');
         const decodedData = decodeIdentity(privateKeyRef);
         
         if (decodedData.length >= 32) {

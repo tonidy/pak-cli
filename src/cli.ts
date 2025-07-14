@@ -9,6 +9,48 @@
 import { program } from 'commander';
 import { PasswordManager } from './password-manager';
 import { PaError } from './types';
+import { logger } from './utils/logger';
+import * as fs from 'fs';
+import * as path from 'path';
+
+// Get version from package.json
+function getPackageVersion(): string {
+  try {
+    const packagePath = path.join(__dirname, '..', 'package.json');
+    const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+    return packageJson.version;
+  } catch {
+    return '0.3.11'; // fallback version
+  }
+}
+
+// Check if -v should show version (when used alone, not with commands)
+function shouldShowVersionForV(): boolean {
+  const args = process.argv.slice(2); // Remove 'node' and script name
+  
+  // Find -v flag
+  let hasV = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-v') {
+      hasV = true;
+      break;
+    }
+  }
+  
+  if (!hasV) return false;
+  
+  // List of known commands
+  const commands = ['add', 'a', 'show', 's', 'list', 'l', 'edit', 'e', 'del', 'd', 'find', 'f', 'git', 'g', 'version', 'se-info', 'convert'];
+  
+  // Check if any command is present
+  for (let i = 0; i < args.length; i++) {
+    if (commands.includes(args[i])) {
+      return false; // -v is being used with a command, so it's for verbosity
+    }
+  }
+  
+  return true; // -v is used alone (possibly with global options), so show version
+}
 
 // Global options
 program
@@ -17,12 +59,33 @@ program
   .option('--no-use-age-binary', 'Disable age binary usage')
   .option('--use-native-se', 'Force use of native Secure Enclave')
   .option('--no-use-native-se', 'Disable native Secure Enclave')
-  .version('0.3.4', '-v, --version', 'Show version')
+  .option('-v, --verbose', 'Enable verbose output (level 1)')
+  .option('-vv', 'Enable more verbose output (level 2)')
+  .option('-vvv', 'Enable very verbose output (level 3)')
+  .option('-vvvv', 'Enable extremely verbose output (level 4)')
+
+  .version(getPackageVersion(), '-V, --version', 'Show version')
   .description('PAK (Password Age Kit) - A simple password manager using age encryption');
+
+// Helper function to parse verbosity level from commander options
+function parseVerbosity(options: any): number {
+  let verbosity = 0;
+  
+  if (options.verbose) verbosity = Math.max(verbosity, 1);
+  if (options.vv) verbosity = Math.max(verbosity, 2);
+  if (options.vvv) verbosity = Math.max(verbosity, 3);
+  if (options.vvvv) verbosity = Math.max(verbosity, 4);
+  
+  return verbosity;
+}
 
 // Helper function to get configuration from global options
 function getConfigFromOptions(options: any) {
   const config: any = {};
+  
+  // Set verbosity level in logger
+  const verbosity = parseVerbosity(options);
+  logger.setVerbosity(verbosity);
   
   // Backend selection
   if (options.backend && options.backend !== 'auto') {
@@ -40,6 +103,25 @@ function getConfigFromOptions(options: any) {
   }
   
   return config;
+}
+
+// Helper function to show version information
+async function showVersion() {
+  try {
+    const pm = new PasswordManager();
+    const version = pm.getVersion();
+    
+    logger.output(`pa version: ${version.version}`);
+    logger.output(`release date: ${version.releaseDate}`);
+    logger.output(`commit: ${version.commit}`);
+  } catch (error) {
+    if (error instanceof PaError) {
+      console.error(`pa: ${error.message}.`);
+    } else {
+      console.error(`pa: ${error}.`);
+    }
+    process.exit(1);
+  }
 }
 
 // Add command
@@ -79,7 +161,7 @@ program
       const config = getConfigFromOptions(command.parent?.opts() || {});
       const pm = new PasswordManager({ config });
       const password = await pm.show(name);
-      console.log(password);
+      logger.output(password);
     } catch (error) {
       if (error instanceof PaError) {
         console.error(`pa: ${error.message}.`);
@@ -101,9 +183,9 @@ program
       const pm = new PasswordManager({ config });
       const passwords = await pm.list();
       if (passwords.length === 0) {
-        console.log('no passwords found');
+        logger.output('no passwords found');
       } else {
-        passwords.forEach(p => console.log(p));
+        passwords.forEach(p => logger.output(p));
       }
     } catch (error) {
       if (error instanceof PaError) {
@@ -195,27 +277,12 @@ program
     }
   });
 
-// Version command
+// Version command (keep existing for 'version' command)
 program
   .command('version')
-  .alias('v')
   .description('Show version information')
-  .action(async (_, command) => {
-    try {
-      const config = getConfigFromOptions(command.parent?.opts() || {});
-      const pm = new PasswordManager({ config });
-      const version = pm.getVersion();
-      console.log(`pa version: ${version.version}`);
-      console.log(`release date: ${version.releaseDate}`);
-      console.log(`commit: ${version.commit}`);
-    } catch (error) {
-      if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
-      } else {
-        console.error(`pa: ${error}.`);
-      }
-      process.exit(1);
-    }
+  .action(async () => {
+    await showVersion();
   });
 
 // SE Info command
@@ -251,7 +318,7 @@ program
       }
       
       const converted = await pm.convertRecipient(recipient, format as 'se' | 'yubikey');
-      console.log(converted);
+      logger.output(converted);
     } catch (error) {
       if (error instanceof PaError) {
         console.error(`pa: ${error.message}.`);
@@ -259,29 +326,6 @@ program
         console.error(`pa: ${error}.`);
       }
       process.exit(1);
-    }
-  });
-
-// Handle version flags
-program
-  .option('-v, --version', 'Show version information')
-  .action((options) => {
-    if (options.version) {
-      try {
-        const pm = new PasswordManager();
-        const version = pm.getVersion();
-        
-        console.log(`pa version: ${version.version}`);
-        console.log(`release date: ${version.releaseDate}`);
-        console.log(`commit: ${version.commit}`);
-      } catch (error) {
-        if (error instanceof PaError) {
-          console.error(`pa: ${error.message}.`);
-        } else {
-          console.error(`pa: ${error}.`);
-        }
-        process.exit(1);
-      }
     }
   });
 
@@ -299,7 +343,7 @@ program.configureHelp({
     [g]it  [cmd]  - Run git command in the password dir.
     [l]ist        - List all entries.
     [s]how [name] - Show password for an entry.
-    [v]ersion     - Show version information.
+    version       - Show version information.
     se-info       - Show Secure Enclave support information.
     convert <recipient> <format> - Convert recipient between 'se' and 'yubikey' formats.
 
@@ -309,6 +353,11 @@ program.configureHelp({
     --no-use-age-binary     - Disable age binary usage
     --use-native-se         - Force use of native Secure Enclave
     --no-use-native-se      - Disable native Secure Enclave
+    -v, --verbose           - Show version (when alone) or enable verbose output (level 1)
+    -vv                     - Enable more verbose output (level 2)
+    -vvv                    - Enable very verbose output (level 3)
+    -vvvv                   - Enable extremely verbose output (level 4)
+    -V, --version           - Show version information
 
   env vars:
     data directory:   export PA_DIR=~/.local/share/pa
@@ -362,5 +411,20 @@ process.on('SIGTERM', () => {
   process.exit(143);
 });
 
-// Parse command line arguments
-program.parse(); 
+// Main async function to handle CLI execution
+async function main() {
+  // Check if -v should show version (when used alone)
+  if (shouldShowVersionForV()) {
+    await showVersion();
+    process.exit(0);
+  }
+
+  // Parse command line arguments normally
+  program.parse(process.argv);
+}
+
+// Run the main function
+main().catch((error) => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+}); 
