@@ -1,0 +1,13 @@
+# Exclude ALL scripts except postinstall
+scripts/*
+!scripts/postinstall.js
+
+# Exclude other development files
+.eslintrc.js
+jest.config.js
+tsconfig.json
+/test
+/examples
+/src
+/native
+/docs
