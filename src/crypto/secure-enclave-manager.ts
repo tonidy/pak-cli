@@ -1,169 +1,119 @@
 /**
  * Secure Enclave Manager
- * Orchestrates multiple Secure Enclave backends: native, pure JS, and CLI
+ *
+ * This manager now standardizes on the CLI backend for core cryptographic
+ * operations to ensure 100% interoperability with the age ecosystem.
+ *
+ * On macOS, it uses the native Swift addon as a "helper" to accelerate
+ * specific operations like identity-to-recipient conversion.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { 
-  AppleSecureEnclaveAPI, 
-  SecureEnclaveKeyPair, 
+import {
+  AppleSecureEnclaveAPI,
+  SecureEnclaveKeyPair,
   SecureEnclaveCapabilities,
-  SecureEnclaveConfig 
+  SecureEnclaveConfig
 } from '../types';
 import { NativeSecureEnclave } from './backend/native-secure-enclave';
-import { PureJSSecureEnclave } from './backend/pure-js-secure-enclave';
 import { CLISecureEnclave } from './backend/age-cli-secure-enclave';
 import { log } from '../utils/logger';
 
-export type SecureEnclaveBackend = 'native' | 'js' | 'cli' | 'auto';
+// 'js' backend is deprecated for interoperability reasons.
+export type SecureEnclaveBackend = 'native' | 'cli' | 'auto';
 
 export interface ExtendedSecureEnclaveConfig extends SecureEnclaveConfig {
   backend?: SecureEnclaveBackend;
   preferNative?: boolean;
-  fallbackToCli?: boolean;
-  useAgeBinary?: boolean;
+  useAgeBinary?: boolean; // This will be implicitly true now
 }
 
 export class SecureEnclaveManager implements AppleSecureEnclaveAPI {
   private pluginPath: string;
   private config: ExtendedSecureEnclaveConfig;
-  private backend: AppleSecureEnclaveAPI | null = null;
-  private backendType: SecureEnclaveBackend = 'auto';
+
+  // The CLI backend is the primary engine for all crypto operations.
+  private cliBackend!: CLISecureEnclave;
+  // The native addon is used as a helper for performance optimizations.
+  private nativeHelper: NativeSecureEnclave | null = null;
 
   constructor(config: ExtendedSecureEnclaveConfig = {
     accessControl: 'any-biometry-or-passcode',
     recipientType: 'piv-p256',
-    useNative: true,
+    useNative: true, // preferNative is a better name
     backend: 'auto',
     preferNative: true,
-    fallbackToCli: true
   }) {
     this.config = config;
     this.pluginPath = this.findAgePluginSe();
-    this.initializeBackend();
+    this.initializeBackends();
   }
 
-  private async initializeBackend(): Promise<void> {
-    const requestedBackend = this.config.backend || 'auto';
+  private initializeBackends(): void {
+    // The CLI backend is now the single source of truth for crypto operations.
+    this.cliBackend = new CLISecureEnclave(this.config, this.pluginPath);
 
-    if (requestedBackend === 'auto') {
-      // Auto-select best available backend
-      if (this.config.preferNative && process.platform === 'darwin') {
-        try {
-          this.backend = new NativeSecureEnclave(this.config);
-          if (await this.backend.isAvailable()) {
-            this.backendType = 'native';
-            return;
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          console.warn('Native SE backend not available:', errorMsg);
-          console.warn('This is normal when installed from npm. Falling back to CLI backend.');
-        }
-      }
-
-      // Try pure JS backend
+    // On macOS, initialize the native addon as a helper if possible.
+    if (process.platform === 'darwin' && this.config.preferNative) {
       try {
-        this.backend = new PureJSSecureEnclave(this.config);
-        if (this.backend && await this.backend.isAvailable()) {
-          this.backendType = 'js';
-          return;
-        }
+        this.nativeHelper = new NativeSecureEnclave(this.config);
       } catch (error) {
-        console.warn('JS SE backend not available:', error instanceof Error ? error.message : String(error));
+        log.warn('Could not initialize native Secure Enclave helper:', error instanceof Error ? error.message : String(error));
+        this.nativeHelper = null;
       }
-
-      // Fall back to CLI
-      if (this.config.fallbackToCli) {
-        this.backend = new CLISecureEnclave(this.config, this.pluginPath);
-        this.backendType = 'cli';
-        return;
-      }
-
-      throw new Error('No Secure Enclave backend available');
-    } else {
-      // Use specific backend
-      switch (requestedBackend) {
-        case 'native':
-          this.backend = new NativeSecureEnclave(this.config);
-          break;
-        case 'js':
-          this.backend = new PureJSSecureEnclave(this.config);
-          break;
-        case 'cli':
-          // Check for contradictory configuration
-          if (this.config.useAgeBinary === false) {
-                  log.warn('⚠️  Warning: CLI backend explicitly selected but age binary usage disabled.');
-      log.warn('   CLI backend inherently requires age binary. Using CLI backend anyway.');
-          }
-          this.backend = new CLISecureEnclave(this.config, this.pluginPath);
-          break;
-        default:
-          throw new Error(`Unknown backend: ${requestedBackend}`);
-      }
-      this.backendType = requestedBackend;
     }
   }
 
   async isAvailable(): Promise<boolean> {
-    if (!this.backend) {
-      await this.initializeBackend();
-    }
-    return this.backend!.isAvailable();
+    // Availability is determined by the primary CLI backend.
+    return this.cliBackend.isAvailable();
   }
 
   async getCapabilities(): Promise<SecureEnclaveCapabilities> {
-    if (!this.backend) {
-      await this.initializeBackend();
-    }
-    const capabilities = await this.backend!.getCapabilities();
+    const capabilities = await this.cliBackend.getCapabilities();
+    const helperStatus = this.nativeHelper ? `native-helper (${await this.nativeHelper.isAvailable() ? 'active' : 'inactive'})` : 'no-native-helper';
     return {
       ...capabilities,
-      version: capabilities.version + ` (${this.backendType})`,
+      version: `${capabilities.version} (${helperStatus})`,
     };
   }
 
-  async generateKeyPair(accessControl: string, format?: 'json' | 'bech32'): Promise<SecureEnclaveKeyPair> {
-    if (!this.backend) {
-      await this.initializeBackend();
-    }
-    return this.backend!.generateKeyPair(accessControl, format);
+  async generateKeyPair(accessControl: string): Promise<SecureEnclaveKeyPair> {
+    // Key generation is always delegated to the CLI backend.
+    return this.cliBackend.generateKeyPair(accessControl);
   }
 
   async loadKeyPair(identity: string): Promise<SecureEnclaveKeyPair> {
-    if (!this.backend) {
-      await this.initializeBackend();
-    }
-    return this.backend!.loadKeyPair(identity);
+    return this.cliBackend.loadKeyPair(identity);
   }
 
   async deleteKeyPair(identity: string): Promise<boolean> {
-    if (!this.backend) {
-      await this.initializeBackend();
-    }
-    return this.backend!.deleteKeyPair(identity);
+    return this.cliBackend.deleteKeyPair(identity);
   }
 
   async encrypt(data: Uint8Array, recipient: string): Promise<Uint8Array> {
-    if (!this.backend) {
-      await this.initializeBackend();
-    }
-    return this.backend!.encrypt(data, recipient);
+    // Encryption is always delegated to the CLI backend.
+    return this.cliBackend.encrypt(data, recipient);
   }
 
   async decrypt(ciphertext: Uint8Array, privateKeyRef: string): Promise<Uint8Array> {
-    if (!this.backend) {
-      await this.initializeBackend();
-    }
-    return this.backend!.decrypt(ciphertext, privateKeyRef);
+    // Decryption is always delegated to the CLI backend.
+    return this.cliBackend.decrypt(ciphertext, privateKeyRef);
   }
 
   async identityToRecipient(identity: string): Promise<string> {
-    if (!this.backend) {
-      await this.initializeBackend();
+    // Use the native helper for performance if available, otherwise fall back to CLI.
+    if (this.nativeHelper && await this.nativeHelper.isAvailable()) {
+      try {
+        log.trace('[SE Manager] Using native helper for identityToRecipient');
+        return await this.nativeHelper.identityToRecipient(identity);
+      } catch (error) {
+        log.warn('Native helper failed for identityToRecipient, falling back to CLI:', error instanceof Error ? error.message : String(error));
+      }
     }
-    return this.backend!.identityToRecipient(identity);
+    log.trace('[SE Manager] Using CLI backend for identityToRecipient');
+    return this.cliBackend.identityToRecipient(identity);
   }
 
   validateAccessControl(accessControl: string): boolean {
@@ -176,53 +126,24 @@ export class SecureEnclaveManager implements AppleSecureEnclaveAPI {
       'current-biometry',
       'current-biometry-and-passcode'
     ];
-    
     return validControls.includes(accessControl);
   }
 
-  recipientToAgeFormat(publicKey: Uint8Array, type: 'piv-p256' | 'p256tag'): string {
-    const keyBase64 = Buffer.from(publicKey).toString('base64');
-    
-    if (type === 'piv-p256') {
-      return `age1se1${keyBase64}`;
-    } else {
-      return `age1p256tag1${keyBase64}`;
-    }
+  recipientToAgeFormat(publicKey: Uint8Array): string {
+    // This is now a simple wrapper around the CLI backend's implementation.
+    return this.cliBackend.recipientToAgeFormat(publicKey);
   }
 
   parseAgeIdentity(identity: string): { data: Uint8Array; accessControl: string } {
-    if (!identity.startsWith('AGE-PLUGIN-SE-')) {
-      throw new Error('Invalid SE identity format');
-    }
-
-    const base64Data = identity.substring('AGE-PLUGIN-SE-'.length);
-    const data = Buffer.from(base64Data, 'base64');
-    
-    return {
-      data,
-      accessControl: this.config.accessControl
-    };
+    // This is now a simple wrapper around the CLI backend's implementation.
+    return this.cliBackend.parseAgeIdentity(identity);
   }
 
-  /**
-   * Get current backend type
-   */
   getCurrentBackend(): SecureEnclaveBackend {
-    return this.backendType;
+    // The concept of multiple backends is removed. We now have a primary and a helper.
+    return this.nativeHelper ? 'native' : 'cli';
   }
 
-  /**
-   * Switch to a different backend
-   */
-  async switchBackend(backend: SecureEnclaveBackend): Promise<void> {
-    this.config.backend = backend;
-    this.backend = null;
-    await this.initializeBackend();
-  }
-
-  /**
-   * Find age-plugin-se binary
-   */
   private findAgePluginSe(): string {
     const possiblePaths = [
       'age-plugin-se',
@@ -245,4 +166,4 @@ export class SecureEnclaveManager implements AppleSecureEnclaveAPI {
 }
 
 // Export the main class with the original name for backward compatibility
-export const AppleSecureEnclave = SecureEnclaveManager; 
+export const AppleSecureEnclave = SecureEnclaveManager;

@@ -23,17 +23,13 @@ export class AgeManager {
     
     // Initialize Apple Secure Enclave if available and enabled
     // Initialize SE manager when we have a specific SE backend OR when useAgeBinary is false
-    if (process.platform === 'darwin' && (config.seBackend === 'js' || config.seBackend === 'native' || config.seBackend === 'cli' || config.seBackend === 'auto' || !config.useAgeBinary)) {
+    if (process.platform === 'darwin') {
       const seConfig: ExtendedSecureEnclaveConfig = {
         accessControl: config.seAccessControl || 'any-biometry-or-passcode',
         recipientType: 'piv-p256',
         useNative: config.useNativeSecureEnclave || false,
-        // Handle backend selection
-        backend: config.seBackend || (config.useNativeSecureEnclave ? 'native' : 'auto'),
+        backend: (config.seBackend === 'js' ? 'auto' : config.seBackend) || 'auto',
         preferNative: config.useNativeSecureEnclave || false,
-        fallbackToCli: !config.useNativeSecureEnclave,
-        // Pass age binary configuration for contradiction detection
-        useAgeBinary: config.useAgeBinary || false
       };
       this.secureEnclave = new SecureEnclaveManager(seConfig);
     }
@@ -101,61 +97,24 @@ export class AgeManager {
    */
   async encrypt(data: string, recipients?: string[]): Promise<Uint8Array> {
     const recipientsToUse = recipients || this.recipients;
-    
     if (!recipientsToUse || recipientsToUse.length === 0) {
       throw new Error('No recipients specified for encryption');
     }
-    
-    // Check if we have SE recipients and can use native SE
-    const hasSeRecipients = recipientsToUse.some(r => r.startsWith('age1se1'));
-    const hasOtherPluginRecipients = recipientsToUse.some(r => 
-      r.startsWith('age1yubikey1') || r.startsWith('age1p256tag1')
-    );
-    
-    // Use native SE encryption if available and we have SE recipients
-    if (this.secureEnclave && hasSeRecipients && !hasOtherPluginRecipients && !this.config.useAgeBinary) {
-      try {
-        // For SE-only encryption, use native SE implementation
-        const seRecipients = recipientsToUse.filter(r => r.startsWith('age1se1'));
-        const standardRecipients = recipientsToUse.filter(r => !r.startsWith('age1se1'));
-        
-        if (seRecipients.length > 0 && standardRecipients.length === 0) {
-          // Pure SE encryption - use native SE
-          const dataBuffer = new TextEncoder().encode(data);
-          const encrypted = await this.secureEnclave.encrypt(dataBuffer, seRecipients[0]);
-          return encrypted;
-        }
-      } catch (error) {
-        // Fall back to CLI on error
-        console.warn('SE native encryption failed, falling back to CLI:', error);
-      }
+
+    const hasPluginRecipients = recipientsToUse.some(r => r.startsWith('age1'));
+
+    // If we have plugin recipients (like age1se1), we must use the CLI-based flow.
+    // The SecureEnclaveManager now handles this internally.
+    if (this.secureEnclave && hasPluginRecipients) {
+        return this.secureEnclave.encrypt(Buffer.from(data), recipientsToUse.join(','));
     }
     
-    // Only use CLI when explicitly configured or when we don't have SE support
-    if (this.config.useAgeBinary) {
-      // Use command-line age when explicitly configured
-      return await this.encryptWithCLI(data, recipientsToUse);
-    }
-    
-    // Check if we have plugin recipients but no native SE support
-    const hasPluginRecipients = recipientsToUse.some(r => 
-      r.startsWith('age1se1') || r.startsWith('age1yubikey1')
-    );
-    
-    // Only fall back to CLI if we don't have native SE support AND we have plugin recipients
-    if (!this.secureEnclave && hasPluginRecipients) {
-      // Use command-line age for plugin support when native SE is not available
-      return await this.encryptWithCLI(data, recipientsToUse);
-    }
-    
-    // Use TypeScript age-encryption library for standard recipients
+    // If there are no plugin recipients, use the standard JS age-encryption library.
     const encrypter = new age.Encrypter();
-    
     for (const recipient of recipientsToUse) {
       encrypter.addRecipient(recipient);
     }
-
-    return await encrypter.encrypt(data);
+    return encrypter.encrypt(data);
   }
 
   /**
@@ -172,105 +131,24 @@ export class AgeManager {
    */
   async decrypt(ciphertext: Uint8Array, identities?: string[]): Promise<string> {
     const identitiesToUse = identities || this.identities;
-    
     if (!identitiesToUse || identitiesToUse.length === 0) {
       throw new Error('No identities specified for decryption');
     }
-    
-    // Check if we have SE identities and can use native SE
-    const hasSeIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-SE-') || i.includes('age-plugin-se-'));
-    const hasOtherPluginIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-YUBIKEY-'));
-    
-    // Helper function to check if an identity is our JSON format
-    const isJsonFormatIdentity = (identity: string): boolean => {
-      if (!identity.startsWith('AGE-PLUGIN-SE-') && !identity.startsWith('age-plugin-se-')) return false;
-      const base64Data = identity.startsWith('AGE-PLUGIN-SE-') 
-        ? identity.substring('AGE-PLUGIN-SE-'.length)
-        : identity.substring('age-plugin-se-'.length);
-      try {
-        const decoded = Buffer.from(base64Data, 'base64').toString();
-        const keyData = JSON.parse(decoded);
-        return !!(keyData.privateKey && keyData.publicKey);
-      } catch {
-        return false;
-      }
-    };
-    
-    // Check if we have JSON format identities (these can't use CLI)
-    const hasJsonFormatIdentities = identitiesToUse.some(isJsonFormatIdentity);
-    
-    // Use native SE decryption if available and we have SE identities
-    if (this.secureEnclave && hasSeIdentities && !hasOtherPluginIdentities && !this.config.useAgeBinary) {
-      try {
-        // For SE-only decryption, use native SE implementation
-        const seIdentities = identitiesToUse.filter(i => i.includes('AGE-PLUGIN-SE-') || i.includes('age-plugin-se-'));
-        const standardIdentities = identitiesToUse.filter(i => !i.includes('AGE-PLUGIN-SE-') && !i.includes('age-plugin-se-'));
-        
-        if (seIdentities.length > 0 && standardIdentities.length === 0) {
-          // Pure SE decryption - use native SE
-          // First, try to get the private key reference from the identity
-          const keyPair = await this.secureEnclave.loadKeyPair(seIdentities[0]);
-          const decrypted = await this.secureEnclave.decrypt(ciphertext, keyPair.privateKeyRef);
-          return new TextDecoder().decode(decrypted);
-        }
-      } catch (error) {
-        // For JSON format identities, don't fall back to CLI since they're incompatible
-        if (hasJsonFormatIdentities) {
-          throw new Error(`Native SE decryption failed: ${error instanceof Error ? error.message : String(error)}. JSON format identities cannot use CLI fallback.`);
-        }
-        // Log the error but don't actually fall back to CLI if useAgeBinary is disabled
-        log.debug('SE native decryption failed:', error instanceof Error ? error.message : String(error));
-        if (!this.config.useAgeBinary) {
-          log.debug('CLI fallback disabled by --no-use-age-binary flag');
-        }
-      }
+
+    const hasPluginIdentities = identitiesToUse.some(i => i.startsWith('AGE-PLUGIN-SE-'));
+
+    // If we have plugin identities, we must use the CLI-based flow.
+    if (this.secureEnclave && hasPluginIdentities) {
+        const decrypted = await this.secureEnclave.decrypt(ciphertext, identitiesToUse[0]);
+        return Buffer.from(decrypted).toString();
     }
-    
-    // Only use CLI when explicitly configured or when we don't have SE support
-    if (this.config.useAgeBinary) {
-      // Don't use CLI for JSON format identities (they're incompatible)
-      if (hasJsonFormatIdentities) {
-        throw new Error('CLI age binary cannot handle JSON format identities. Please use native SE backend or disable useAgeBinary.');
-      }
-      // Use command-line age when explicitly configured
-      return await this.decryptWithCLI(ciphertext, identitiesToUse);
-    }
-    
-    // Check if we have plugin identities but no native SE support
-    const hasPluginIdentities = identitiesToUse.some(i => 
-      i.includes('AGE-PLUGIN-SE-') || i.includes('age-plugin-se-') || i.includes('AGE-PLUGIN-YUBIKEY-')
-    );
-    
-    // Check if the ciphertext contains plugin-specific headers (for backwards compatibility)
-    const ciphertextString = new TextDecoder().decode(ciphertext.slice(0, 200));
-    const hasPluginCiphertext = ciphertextString.includes('piv-p256') || ciphertextString.includes('yubikey');
-    
-    // Only fall back to CLI if we don't have native SE support AND we have plugin content
-    // BUT avoid CLI for JSON format identities and respect useAgeBinary setting
-    if (!this.secureEnclave && (hasPluginIdentities || hasPluginCiphertext) && !this.config.useAgeBinary) {
-      // Don't use CLI for JSON format identities (they're incompatible)
-      if (hasJsonFormatIdentities) {
-        throw new Error('Native SE backend not available and JSON format identities cannot use CLI fallback. Please enable native SE backend.');
-      }
-      // Don't use CLI when useAgeBinary is explicitly disabled
-      throw new Error('Plugin identities detected but CLI fallback disabled by --no-use-age-binary. Please enable age binary or use native SE backend.');
-    } else if (!this.secureEnclave && (hasPluginIdentities || hasPluginCiphertext) && this.config.useAgeBinary) {
-      // Don't use CLI for JSON format identities (they're incompatible)
-      if (hasJsonFormatIdentities) {
-        throw new Error('CLI age binary cannot handle JSON format identities. Please use native SE backend or disable useAgeBinary.');
-      }
-      // Use command-line age for plugin support when native SE is not available
-      return await this.decryptWithCLI(ciphertext, identitiesToUse);
-    }
-    
-    // Use TypeScript age-encryption library for standard identities
+
+    // If there are no plugin identities, use the standard JS age-encryption library.
     const decrypter = new age.Decrypter();
-    
     for (const identity of identitiesToUse) {
       decrypter.addIdentity(identity);
     }
-
-    return await decrypter.decrypt(ciphertext, "text");
+    return decrypter.decrypt(ciphertext, "text");
   }
 
   /**
@@ -626,7 +504,7 @@ export class AgeManager {
     }
 
     try {
-      const keyPair = await this.secureEnclave.generateKeyPair(accessControl, format);
+      const keyPair = await this.secureEnclave.generateKeyPair(accessControl);
       
       if (outputFile) {
         const fs = await import('fs');
@@ -799,150 +677,10 @@ export class AgeManager {
   /**
    * Encrypt data using command-line age (for plugin support)
    */
-  private async encryptWithCLI(data: string, recipients: string[]): Promise<Uint8Array> {
-    const { execSync } = await import('child_process');
-    const { writeFileSync, readFileSync, unlinkSync } = await import('fs');
-    const { join } = await import('path');
-    const { tmpdir } = await import('os');
-    
-    const tmpInput = join(tmpdir(), `age-input-${Date.now()}.txt`);
-    const tmpOutput = join(tmpdir(), `age-output-${Date.now()}.age`);
-    
-    try {
-      // Write input data to temporary file
-      writeFileSync(tmpInput, data, 'utf8');
-      
-      // Get age binary path - ensure it's in the PATH
-      let ageBinary = this.config.ageBinaryPath || 'age';
-      
-      // If no custom path is set, try to find the age binary in common locations
-      if (!this.config.ageBinaryPath) {
-        try {
-          const { execSync: execSyncForPath } = await import('child_process');
-          const whichResult = execSyncForPath('which age', { 
-            encoding: 'utf8',
-            env: { 
-              ...process.env, 
-              PATH: '/opt/homebrew/bin:/usr/local/bin:' + (process.env.PATH || '')
-            }
-          }).trim();
-          ageBinary = whichResult;
-        } catch {
-          // Fall back to just 'age' if which fails
-          ageBinary = 'age';
-        }
-      }
-      
-      // Build age command with recipients
-      const recipientArgs = recipients.map(r => `-r "${r}"`).join(' ');
-      const command = `"${ageBinary}" ${recipientArgs} -o "${tmpOutput}" "${tmpInput}"`;
-      
-      // Set up environment with proper PATH for age plugins
-      const env = {
-        ...process.env,
-        PATH: '/opt/homebrew/bin:/usr/local/bin:' + (process.env.PATH || ''),
-        // Ensure age can find plugins
-        AGE_PLUGIN_PATH: '/opt/homebrew/bin:/usr/local/bin'
-      };
-      
-      // Execute age command with proper environment
-      execSync(command, { 
-        stdio: 'pipe',
-        env: env
-      });
-      
-      // Read encrypted output
-      const encryptedData = readFileSync(tmpOutput);
-      
-      return new Uint8Array(encryptedData);
-    } catch (error) {
-      throw new Error(`Age CLI encryption failed: ${error}`);
-    } finally {
-      // Clean up temporary files
-      try {
-        unlinkSync(tmpInput);
-        unlinkSync(tmpOutput);
-      } catch {
-        // Ignore cleanup errors
-      }
-    }
-  }
 
   /**
    * Decrypt data using command-line age (for plugin support)
    */
-  private async decryptWithCLI(ciphertext: Uint8Array, identities: string[]): Promise<string> {
-    const { execSync } = await import('child_process');
-    const { writeFileSync, readFileSync, unlinkSync } = await import('fs');
-    const { join } = await import('path');
-    const { tmpdir } = await import('os');
-    
-    const tmpInput = join(tmpdir(), `age-input-${Date.now()}.age`);
-    const tmpOutput = join(tmpdir(), `age-output-${Date.now()}.txt`);
-    const tmpIdentities = join(tmpdir(), `age-identities-${Date.now()}.txt`);
-    
-    try {
-      // Write ciphertext to temporary file
-      writeFileSync(tmpInput, ciphertext);
-      
-      // Write identities to temporary file
-      writeFileSync(tmpIdentities, identities.join('\n'), 'utf8');
-      
-      // Get age binary path - ensure it's in the PATH
-      let ageBinary = this.config.ageBinaryPath || 'age';
-      
-      // If no custom path is set, try to find the age binary in common locations
-      if (!this.config.ageBinaryPath) {
-        try {
-          const { execSync: execSyncForPath } = await import('child_process');
-          const whichResult = execSyncForPath('which age', { 
-            encoding: 'utf8',
-            env: { 
-              ...process.env, 
-              PATH: '/opt/homebrew/bin:/usr/local/bin:' + (process.env.PATH || '')
-            }
-          }).trim();
-          ageBinary = whichResult;
-        } catch {
-          // Fall back to just 'age' if which fails
-          ageBinary = 'age';
-        }
-      }
-      
-      // Build age command
-      const command = `"${ageBinary}" --decrypt -i "${tmpIdentities}" -o "${tmpOutput}" "${tmpInput}"`;
-      
-      // Set up environment with proper PATH for age plugins
-      const env = {
-        ...process.env,
-        PATH: '/opt/homebrew/bin:/usr/local/bin:' + (process.env.PATH || ''),
-        // Ensure age can find plugins
-        AGE_PLUGIN_PATH: '/opt/homebrew/bin:/usr/local/bin'
-      };
-      
-      // Execute age command with stdio: 'inherit' to allow Touch ID prompt
-      execSync(command, { 
-        stdio: 'inherit',
-        env: env
-      });
-      
-      // Read decrypted output
-      const decryptedData = readFileSync(tmpOutput, 'utf8');
-      
-      return decryptedData;
-    } catch (error) {
-      throw new Error(`Age CLI decryption failed: ${error}`);
-    } finally {
-      // Clean up temporary files
-      try {
-        unlinkSync(tmpInput);
-        unlinkSync(tmpOutput);
-        unlinkSync(tmpIdentities);
-      } catch {
-        // Ignore cleanup errors
-      }
-    }
-  }
 
   /**
    * Decrypt a file using command-line age (for plugin support)

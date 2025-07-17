@@ -18,8 +18,7 @@ async function runExample() {
     const pm = new PasswordManager({
       backend: 'native',
       accessControl: 'any-biometry-or-passcode',
-      recipientType: 'piv-p256',
-      useNative: true
+      recipientType: 'piv-p256'
     });
 
     console.log('📱 Checking Secure Enclave availability...');
