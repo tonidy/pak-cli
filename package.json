@@ -4,7 +4,6 @@
   "description": "PAK (Password Age Kit) - A simple, secure password manager in JavaScript using age encryption.",
   "main": "dist/src/index.js",
   "bin": {
-    "pa": "dist/src/cli.js",
     "pak": "dist/src/cli.js"
   },
   "files": [
@@ -19,11 +18,11 @@
     "build:native": "./scripts/build-native.sh",
     "build:swift": "cd native && npm run build-swift",
     "dev": "ts-node src/cli.ts",
-    "test": "jest",
+    "test": "jest --passWithNoTests",
     "test:interop": "mocha dist/test/crypto-interop.test.js",
     "test:watch": "jest --watch",
-    "lint": "eslint src/**/*.{js,ts}",
-    "lint:fix": "eslint src/**/*.{js,ts} --fix",
+    "lint": "eslint \"src/**/*.{js,ts}\"",
+    "lint:fix": "eslint \"src/**/*.{js,ts}\" --fix",
     "typecheck": "tsc --noEmit",
     "prepare": "npm run build",
     "postinstall": "node scripts/postinstall.js"

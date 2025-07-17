@@ -24,7 +24,7 @@ Or use directly with npx:
 npx @kdbx/pak --help
 ```
 
-> **Note**: Both `pa` and `pak` commands are available after installation. In Indonesia, using "Pak" isn’t just about calling someone "sir" — it’s about showing respect, building community, and being part of a culture that values kindness and humility.
+> **Note**: The `pak` command is available after installation. In Indonesia, using "Pak" isn’t just about calling someone "sir" — it’s about showing respect, building community, and being part of a culture that values kindness and humility.
 
 >So whether you're asking for help or giving a command, saying "Pak" makes everything sound more friendly and respectful — just like how locals do it.
 

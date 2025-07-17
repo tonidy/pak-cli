@@ -208,7 +208,7 @@ export class CredentialManager implements CredentialService {
     try {
       const secretTool = spawn('secret-tool', [
         'store',
-        '--label', `pa: ${service}`,
+        '--label', `pak: ${service}`,
         'service', service,
         'username', username
       ], { stdio: 'pipe' });

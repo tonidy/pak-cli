@@ -22,8 +22,8 @@ export class AgeManager {
     this.config = config;
     
     // Initialize Apple Secure Enclave if available and enabled
-    // Allow initialization when CLI backend is explicitly selected even if useAgeBinary is false
-    if (process.platform === 'darwin' && (!config.useAgeBinary || config.seBackend === 'cli')) {
+    // Initialize SE manager when we have a specific SE backend OR when useAgeBinary is false
+    if (process.platform === 'darwin' && (config.seBackend === 'js' || config.seBackend === 'native' || config.seBackend === 'cli' || config.seBackend === 'auto' || !config.useAgeBinary)) {
       const seConfig: ExtendedSecureEnclaveConfig = {
         accessControl: config.seAccessControl || 'any-biometry-or-passcode',
         recipientType: 'piv-p256',
@@ -84,7 +84,7 @@ export class AgeManager {
    */
   async identityToRecipient(identity: string): Promise<string> {
     // Handle SE identities with the Secure Enclave backend
-    if (identity.startsWith('AGE-PLUGIN-SE-')) {
+    if (identity.startsWith('AGE-PLUGIN-SE-') || identity.startsWith('age-plugin-se-')) {
       if (!this.secureEnclave) {
         throw new Error('Secure Enclave backend not available for SE identity');
       }
@@ -178,13 +178,15 @@ export class AgeManager {
     }
     
     // Check if we have SE identities and can use native SE
-    const hasSeIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-SE-'));
+    const hasSeIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-SE-') || i.includes('age-plugin-se-'));
     const hasOtherPluginIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-YUBIKEY-'));
     
     // Helper function to check if an identity is our JSON format
     const isJsonFormatIdentity = (identity: string): boolean => {
-      if (!identity.startsWith('AGE-PLUGIN-SE-')) return false;
-      const base64Data = identity.substring('AGE-PLUGIN-SE-'.length);
+      if (!identity.startsWith('AGE-PLUGIN-SE-') && !identity.startsWith('age-plugin-se-')) return false;
+      const base64Data = identity.startsWith('AGE-PLUGIN-SE-') 
+        ? identity.substring('AGE-PLUGIN-SE-'.length)
+        : identity.substring('age-plugin-se-'.length);
       try {
         const decoded = Buffer.from(base64Data, 'base64').toString();
         const keyData = JSON.parse(decoded);
@@ -201,8 +203,8 @@ export class AgeManager {
     if (this.secureEnclave && hasSeIdentities && !hasOtherPluginIdentities && !this.config.useAgeBinary) {
       try {
         // For SE-only decryption, use native SE implementation
-        const seIdentities = identitiesToUse.filter(i => i.includes('AGE-PLUGIN-SE-'));
-        const standardIdentities = identitiesToUse.filter(i => !i.includes('AGE-PLUGIN-SE-'));
+        const seIdentities = identitiesToUse.filter(i => i.includes('AGE-PLUGIN-SE-') || i.includes('age-plugin-se-'));
+        const standardIdentities = identitiesToUse.filter(i => !i.includes('AGE-PLUGIN-SE-') && !i.includes('age-plugin-se-'));
         
         if (seIdentities.length > 0 && standardIdentities.length === 0) {
           // Pure SE decryption - use native SE
@@ -236,7 +238,7 @@ export class AgeManager {
     
     // Check if we have plugin identities but no native SE support
     const hasPluginIdentities = identitiesToUse.some(i => 
-      i.includes('AGE-PLUGIN-SE-') || i.includes('AGE-PLUGIN-YUBIKEY-')
+      i.includes('AGE-PLUGIN-SE-') || i.includes('age-plugin-se-') || i.includes('AGE-PLUGIN-YUBIKEY-')
     );
     
     // Check if the ciphertext contains plugin-specific headers (for backwards compatibility)
@@ -309,13 +311,15 @@ export class AgeManager {
     }
     
     // Check if we have SE identities and can use native SE
-    const hasSeIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-SE-'));
+    const hasSeIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-SE-') || i.includes('age-plugin-se-'));
     const hasOtherPluginIdentities = identitiesToUse.some(i => i.includes('AGE-PLUGIN-YUBIKEY-'));
     
     // Helper function to check if an identity is our JSON format
     const isJsonFormatIdentity = (identity: string): boolean => {
-      if (!identity.startsWith('AGE-PLUGIN-SE-')) return false;
-      const base64Data = identity.substring('AGE-PLUGIN-SE-'.length);
+      if (!identity.startsWith('AGE-PLUGIN-SE-') && !identity.startsWith('age-plugin-se-')) return false;
+      const base64Data = identity.startsWith('AGE-PLUGIN-SE-') 
+        ? identity.substring('AGE-PLUGIN-SE-'.length)
+        : identity.substring('age-plugin-se-'.length);
       try {
         const decoded = Buffer.from(base64Data, 'base64').toString();
         const keyData = JSON.parse(decoded);
@@ -332,8 +336,8 @@ export class AgeManager {
     if (this.secureEnclave && hasSeIdentities && !hasOtherPluginIdentities && !this.config.useAgeBinary) {
       try {
         // For SE-only decryption, use native SE implementation
-        const seIdentities = identitiesToUse.filter(i => i.includes('AGE-PLUGIN-SE-'));
-        const standardIdentities = identitiesToUse.filter(i => !i.includes('AGE-PLUGIN-SE-'));
+        const seIdentities = identitiesToUse.filter(i => i.includes('AGE-PLUGIN-SE-') || i.includes('age-plugin-se-'));
+        const standardIdentities = identitiesToUse.filter(i => !i.includes('AGE-PLUGIN-SE-') && !i.includes('age-plugin-se-'));
         
         if (seIdentities.length > 0 && standardIdentities.length === 0) {
           // Pure SE decryption - use native SE - read file and decrypt
@@ -368,7 +372,7 @@ export class AgeManager {
     
     // Check if we have plugin identities that need CLI support
     const hasPluginIdentities = identitiesToUse.some(i => 
-      i.includes('AGE-PLUGIN-SE-') || i.includes('AGE-PLUGIN-YUBIKEY-')
+      i.includes('AGE-PLUGIN-SE-') || i.includes('age-plugin-se-') || i.includes('AGE-PLUGIN-YUBIKEY-')
     );
     
     // Fall back to CLI for plugin identities (either no native SE or native SE failed)

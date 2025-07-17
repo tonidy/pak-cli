@@ -111,14 +111,14 @@ async function showVersion() {
     const pm = new PasswordManager();
     const version = pm.getVersion();
     
-    logger.output(`pa version: ${version.version}`);
+    logger.output(`pak version: ${version.version}`);
     logger.output(`release date: ${version.releaseDate}`);
     logger.output(`commit: ${version.commit}`);
   } catch (error) {
     if (error instanceof PaError) {
-      console.error(`pa: ${error.message}.`);
+      console.error(`pak: ${error.message}.`);
     } else {
-      console.error(`pa: ${error}.`);
+      console.error(`pak: ${error}.`);
     }
     process.exit(1);
   }
@@ -143,9 +143,9 @@ program
       });
     } catch (error) {
       if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
+        console.error(`pak: ${error.message}.`);
       } else {
-        console.error(`pa: ${error}.`);
+        console.error(`pak: ${error}.`);
       }
       process.exit(1);
     }
@@ -164,9 +164,9 @@ program
       logger.output(password);
     } catch (error) {
       if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
+        console.error(`pak: ${error.message}.`);
       } else {
-        console.error(`pa: ${error}.`);
+        console.error(`pak: ${error}.`);
       }
       process.exit(1);
     }
@@ -189,9 +189,9 @@ program
       }
     } catch (error) {
       if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
+        console.error(`pak: ${error.message}.`);
       } else {
-        console.error(`pa: ${error}.`);
+        console.error(`pak: ${error}.`);
       }
       process.exit(1);
     }
@@ -209,9 +209,9 @@ program
       await pm.edit(name);
     } catch (error) {
       if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
+        console.error(`pak: ${error.message}.`);
       } else {
-        console.error(`pa: ${error}.`);
+        console.error(`pak: ${error}.`);
       }
       process.exit(1);
     }
@@ -229,9 +229,9 @@ program
       await pm.delete(name);
     } catch (error) {
       if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
+        console.error(`pak: ${error.message}.`);
       } else {
-        console.error(`pa: ${error}.`);
+        console.error(`pak: ${error}.`);
       }
       process.exit(1);
     }
@@ -249,9 +249,9 @@ program
       await pm.find({ command: cmd as 'show' | 'edit' | 'del' });
     } catch (error) {
       if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
+        console.error(`pak: ${error.message}.`);
       } else {
-        console.error(`pa: ${error}.`);
+        console.error(`pak: ${error}.`);
       }
       process.exit(1);
     }
@@ -269,9 +269,9 @@ program
       await pm.git(args);
     } catch (error) {
       if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
+        console.error(`pak: ${error.message}.`);
       } else {
-        console.error(`pa: ${error}.`);
+        console.error(`pak: ${error}.`);
       }
       process.exit(1);
     }
@@ -296,9 +296,9 @@ program
       await pm.getSecureEnclaveInfo();
     } catch (error) {
       if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
+        console.error(`pak: ${error.message}.`);
       } else {
-        console.error(`pa: ${error}.`);
+        console.error(`pak: ${error}.`);
       }
       process.exit(1);
     }
@@ -321,9 +321,9 @@ program
       logger.output(converted);
     } catch (error) {
       if (error instanceof PaError) {
-        console.error(`pa: ${error.message}.`);
+        console.error(`pak: ${error.message}.`);
       } else {
-        console.error(`pa: ${error}.`);
+        console.error(`pak: ${error}.`);
       }
       process.exit(1);
     }
@@ -332,7 +332,7 @@ program
 // Custom help
 program.configureHelp({
   formatHelp: () => {
-    return `  pa
+    return `  pak
     a simple password manager
 
   commands:

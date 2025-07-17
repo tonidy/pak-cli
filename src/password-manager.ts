@@ -623,9 +623,9 @@ export class PasswordManager {
     if (!this.config.useAgeBinary && hasIdentity) {
       try {
         const identityContent = await this.fileManager.read(this.identitiesFile);
-        if (identityContent.includes('AGE-PLUGIN-SE-') || identityContent.includes('AGE-PLUGIN-YUBIKEY-')) {
+        if (identityContent.includes('AGE-PLUGIN-SE-') || identityContent.includes('age-plugin-se-') || identityContent.includes('AGE-PLUGIN-YUBIKEY-')) {
           // Check for CLI-generated identities (very long format)
-          const identityLines = identityContent.split('\n').filter(line => line.startsWith('AGE-PLUGIN-SE-'));
+          const identityLines = identityContent.split('\n').filter(line => line.startsWith('AGE-PLUGIN-SE-') || line.startsWith('age-plugin-se-'));
           const hasCliGeneratedIdentities = identityLines.some(line => line.length > 200);
           
           if (hasCliGeneratedIdentities) {
@@ -641,7 +641,7 @@ export class PasswordManager {
             // Check if user explicitly disabled age binary or wants to use native SE
             if (this.explicitlyDisabledAgeBinary) {
               log.debug('Detected age plugin identities, but useAgeBinary explicitly set to false - using pure JS SE implementation');
-            } else if (this.config.useNativeSecureEnclave && identityContent.includes('AGE-PLUGIN-SE-')) {
+            } else if (this.config.useNativeSecureEnclave && (identityContent.includes('AGE-PLUGIN-SE-') || identityContent.includes('age-plugin-se-'))) {
                               log.debug('Detected SE identities with native SE enabled - using native implementation');
             } else {
                               log.debug('Detected age plugin identities, auto-enabling age binary');
@@ -658,7 +658,7 @@ export class PasswordManager {
     if (this.config.useAgeBinary && hasIdentity) {
       try {
         const identityContent = await this.fileManager.read(this.identitiesFile);
-        if (identityContent.includes('AGE-PLUGIN-SE-')) {
+        if (identityContent.includes('AGE-PLUGIN-SE-') || identityContent.includes('age-plugin-se-')) {
           const capabilities = await this.getPlatformCapabilities();
           if (!capabilities.secureEnclave) {
             console.warn('⚠️  Warning: Found Secure Enclave identities but age-plugin-se is not installed!');
