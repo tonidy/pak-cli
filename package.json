@@ -1,6 +1,6 @@
 {
   "name": "@kdbx/pak",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "description": "PAK (Password Age Kit) - A simple, secure password manager in JavaScript using age encryption.",
   "main": "dist/src/index.js",
   "bin": {
@@ -13,7 +13,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "npm run build:native && tsc && rm -rf dist/native && cp -r native dist/",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && npm run build:native && tsc && rm -rf dist/native && cp -r native dist/",
     "build:watch": "tsc --watch",
     "build:native": "./scripts/build-native.sh",
     "build:swift": "cd native && npm run build-swift",
