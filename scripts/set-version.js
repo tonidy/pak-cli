@@ -6,25 +6,46 @@ const packageJsonPath = path.join(__dirname, '..', 'package.json');
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 
 const version = packageJson.version;
-const commit = execSync('git rev-parse --short HEAD').toString().trim();
+let commit = 'unknown';
+try {
+  commit = execSync('git rev-parse --short HEAD').toString().trim();
+} catch (e) {
+  console.warn('Warning: Could not get git commit hash');
+}
 const releaseDate = new Date().toISOString().split('T')[0];
 
-const filePath = path.join(__dirname, '..', 'dist', 'src', 'password-manager.js');
+// Update password-manager.js
+const passwordManagerPath = path.join(__dirname, '..', 'dist', 'src', 'password-manager.js');
 
-if (fs.existsSync(filePath)) {
-  let content = fs.readFileSync(filePath, 'utf8');
+if (fs.existsSync(passwordManagerPath)) {
+  let content = fs.readFileSync(passwordManagerPath, 'utf8');
 
-  content = content.replace(/__VERSION__/g, version);
-  content = content.replace(/__RELEASE_DATE__/g, releaseDate);
-  content = content.replace(/__COMMIT__/g, commit);
+  // Replace version placeholders ONLY in the static property assignments
+  // Use more specific patterns to avoid replacing in the version check logic
+  content = content.replace(/PA_VERSION = ['"]__VERSION__['"]/g, `PA_VERSION = '${version}'`);
+  content = content.replace(/PA_RELEASE_DATE = ['"]__RELEASE_DATE__['"]/g, `PA_RELEASE_DATE = '${releaseDate}'`);
+  content = content.replace(/PA_COMMIT = ['"]__COMMIT__['"]/g, `PA_COMMIT = '${commit}'`);
 
-  fs.writeFileSync(filePath, content, 'utf8');
+  fs.writeFileSync(passwordManagerPath, content, 'utf8');
 
-  console.log(`Version information set in ${filePath}`);
+  console.log(`Version information set in ${passwordManagerPath}`);
   console.log(`  Version: ${version}`);
   console.log(`  Release Date: ${releaseDate}`);
   console.log(`  Commit: ${commit}`);
 } else {
-  console.error(`Error: ${filePath} not found. Make sure to run 'tsc' before this script.`);
+  console.error(`Error: ${passwordManagerPath} not found. Make sure to run 'tsc' before this script.`);
   process.exit(1);
+}
+
+// Also update cli.js to fix the fallback version
+const cliPath = path.join(__dirname, '..', 'dist', 'src', 'cli.js');
+
+if (fs.existsSync(cliPath)) {
+  let cliContent = fs.readFileSync(cliPath, 'utf8');
+  
+  // Replace the fallback version in getPackageVersion function
+  cliContent = cliContent.replace(/return ['"]0\.5\.0['"];(\s*\/\/ fallback version)/g, `return '${version}';$1`);
+  
+  fs.writeFileSync(cliPath, cliContent, 'utf8');
+  console.log(`Fallback version updated in ${cliPath}`);
 }
