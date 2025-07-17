@@ -20,7 +20,6 @@ import { NativeSecureEnclave } from './backend/native-secure-enclave';
 import { CLISecureEnclave } from './backend/age-cli-secure-enclave';
 import { log } from '../utils/logger';
 
-// 'js' backend is deprecated for interoperability reasons.
 export type SecureEnclaveBackend = 'native' | 'cli' | 'auto';
 
 export interface ExtendedSecureEnclaveConfig extends SecureEnclaveConfig {

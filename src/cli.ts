@@ -54,7 +54,7 @@ function shouldShowVersionForV(): boolean {
 
 // Global options
 program
-  .option('-b, --backend <backend>', 'Secure Enclave backend to use: native, js, cli, auto', 'auto')
+  .option('-b, --backend <backend>', 'Secure Enclave backend to use: native, cli, auto', 'auto')
   .option('--use-age-binary', 'Force use of age binary (CLI backend)')
   .option('--no-use-age-binary', 'Disable age binary usage')
   .option('--use-native-se', 'Force use of native Secure Enclave')
@@ -348,7 +348,7 @@ program.configureHelp({
     convert <recipient> <format> - Convert recipient between 'se' and 'yubikey' formats.
 
   global options:
-    -b, --backend <backend>     - Set Secure Enclave backend: native, js, cli, auto (default: auto)
+    -b, --backend <backend>     - Set Secure Enclave backend: native, cli, auto (default: auto)
     --use-age-binary        - Force use of age binary (CLI backend)
     --no-use-age-binary     - Disable age binary usage
     --use-native-se         - Force use of native Secure Enclave
@@ -372,7 +372,7 @@ program.configureHelp({
   secure enclave env vars:
     access control:   export PA_SE_ACCESS_CONTROL=any-biometry-or-passcode
     auto confirm:     export PA_SE_AUTO_CONFIRM=1
-    backend:          export PA_SE_BACKEND=native (native|js|cli|auto)
+    backend:          export PA_SE_BACKEND=native (native|cli|auto)
 
   platform support:
     - macOS: Keychain integration, Secure Enclave (age-plugin-se)
@@ -382,7 +382,6 @@ program.configureHelp({
 
   backend selection:
     native    - Use native Swift Secure Enclave addon (fastest, hardware-backed)
-    js        - Use pure JavaScript implementation (fast, software-based)
     cli       - Use age-plugin-se binary (slowest, hardware-backed)
     auto      - Automatically choose best available backend (default)
 `;

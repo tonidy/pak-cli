@@ -864,27 +864,27 @@ export class PasswordManager {
   }
 
   private validateSeBackend(backend: string): boolean {
-    const validBackends = ['native', 'js', 'cli', 'auto'];
+    const validBackends = ['native', 'cli', 'auto'];
     return validBackends.includes(backend);
   }
 
   private getGitInfo(): GitInfo {
     try {
       const { execSync } = require('child_process');
-      const scriptDir = path.dirname(__filename);
+      const projectRoot = path.join(__dirname, '..');
       
-      if (require('fs').existsSync(path.join(scriptDir, '.git'))) {
+      if (require('fs').existsSync(path.join(projectRoot, '.git'))) {
         const originalCwd = process.cwd();
-        process.chdir(scriptDir);
+        process.chdir(projectRoot);
         
         try {
-          const tag = execSync('git describe --tags 2>/dev/null || git describe --always 2>/dev/null || echo "no-tag"', 
+          const tag = execSync('git describe --tags --always 2>/dev/null || echo "no-tag"',
             { encoding: 'utf8' }).trim();
-          const commit = execSync('git rev-parse --short HEAD 2>/dev/null || echo "no-commit"', 
+          const commit = execSync('git rev-parse --short HEAD 2>/dev/null || echo "no-commit"',
             { encoding: 'utf8' }).trim();
-          const status = execSync('git status --porcelain 2>/dev/null', 
+          const status = execSync('git status --porcelain 2>/dev/null',
             { encoding: 'utf8' }).trim();
-          const date = execSync('git log -1 --format=%cd --date=short 2>/dev/null || echo "unknown"', 
+          const date = execSync('git log -1 --format=%cd --date=short 2>/dev/null || echo "unknown"',
             { encoding: 'utf8' }).trim();
           
           return {
