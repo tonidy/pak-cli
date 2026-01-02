@@ -16,11 +16,23 @@ import * as path from 'path';
 // Get version from package.json
 function getPackageVersion(): string {
   try {
-    const packagePath = path.join(__dirname, '..', 'package.json');
-    const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
-    return packageJson.version;
+    // Try multiple paths to find package.json
+    const possiblePaths = [
+      path.join(__dirname, '..', 'package.json'),
+      path.join(__dirname, '..', '..', 'package.json'),
+      path.join(process.cwd(), 'package.json')
+    ];
+    
+    for (const packagePath of possiblePaths) {
+      if (fs.existsSync(packagePath)) {
+        const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+        return packageJson.version;
+      }
+    }
+    
+    return '0.5.0'; // fallback version - should match package.json
   } catch {
-    return '0.3.11'; // fallback version
+    return '0.5.0'; // fallback version - should match package.json
   }
 }
 

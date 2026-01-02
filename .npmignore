@@ -1,13 +1,28 @@
-# Exclude ALL scripts except postinstall
-scripts/*
-!scripts/postinstall.js
+# Exclude ALL scripts directory (postinstall.js is copied to dist/)
+scripts/
 
-# Exclude other development files
+# Exclude source files (compiled versions are in dist/src/)
+src/
+test/
+examples/
+native/
+
+# Exclude development configuration files
 .eslintrc.js
 jest.config.js
 tsconfig.json
-/test
-/examples
-/src
-/native
-/docs
+.gitignore
+.git/
+
+# Exclude documentation and development directories
+docs/
+coverage/
+.nyc_output/
+
+# Exclude build artifacts that shouldn't be published
+*.log
+*.tgz
+node_modules/
+.DS_Store# Force exclude scripts directory completely
+scripts/
+scripts/*

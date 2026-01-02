@@ -432,7 +432,12 @@ export class PasswordManager {
    * Get version information
    */
   getVersion(): VersionInfo {
-    const isDevVersion = PasswordManager.PA_VERSION === '__VERSION__';
+    // Check if this is a development version (placeholders not replaced)
+    // We check for the literal string '__VERSION__' to detect unreplaced placeholders
+    const versionStr = String(PasswordManager.PA_VERSION);
+    const isDevVersion = versionStr === '__VERSION__' ||
+                        versionStr.includes('__') ||
+                        versionStr === 'development';
     
     if (isDevVersion) {
       // Try to get git info for development version
